@@ -1,0 +1,598 @@
+[
+  {
+    "cacheKey": "cheap:aesi, tyrant of gyre strait",
+    "id": "d607b003-6b48-429c-a7fd-45b8dd1bb4f9",
+    "name": "Aesi, Tyrant of Gyre Strait",
+    "nameKey": "aesi, tyrant of gyre strait",
+    "type": "Creature",
+    "typeLine": "Legendary Creature — Serpent",
+    "rarity": "mythic",
+    "manaCost": "{4}{G}{U}",
+    "manaValue": 6,
+    "colors": [
+      "G",
+      "U"
+    ],
+    "colorIdentity": [
+      "G",
+      "U"
+    ],
+    "oracleText": "You may play an additional land on each of your turns.\nLandfall — Whenever a land you control enters, you may draw a card.",
+    "keywords": [
+      "Landfall"
+    ],
+    "imageUri": "https://cards.scryfall.io/normal/front/d/6/d607b003-6b48-429c-a7fd-45b8dd1bb4f9.jpg?1783928734",
+    "artist": "Viktor Titov",
+    "producedMana": [],
+    "setCode": "CMR",
+    "setName": "Commander Legends",
+    "collectorNumber": "365",
+    "priceUsdFoil": "12.56",
+    "scryfallUri": "https://scryfall.com/card/cmr/365/aesi-tyrant-of-gyre-strait?utm_source=api",
+    "fetchedAt": 1788267456266
+  },
+  {
+    "cacheKey": "cheap:arcane signet",
+    "id": "93ad8d8c-afaf-4525-907c-2521aebcd7da",
+    "name": "Arcane Signet",
+    "nameKey": "arcane signet",
+    "type": "Artifact",
+    "typeLine": "Artifact",
+    "rarity": "common",
+    "manaCost": "{2}",
+    "manaValue": 2,
+    "colors": [],
+    "colorIdentity": [],
+    "oracleText": "{T}: Add one mana of any color in your commander's color identity.",
+    "keywords": [],
+    "imageUri": "https://cards.scryfall.io/normal/front/9/3/93ad8d8c-afaf-4525-907c-2521aebcd7da.jpg?1787661601",
+    "artist": "MSCHF",
+    "producedMana": [
+      "B",
+      "G",
+      "R",
+      "U",
+      "W"
+    ],
+    "setCode": "SLZ",
+    "setName": "The Zeta Set",
+    "collectorNumber": "94",
+    "scryfallUri": "https://scryfall.com/card/slz/94/arcane-signet?utm_source=api",
+    "fetchedAt": 1788267456631
+  },
+  {
+    "cacheKey": "cheap:beast within",
+    "id": "44e63c67-f7ae-4481-a27d-648fd4e98560",
+    "name": "Beast Within",
+    "nameKey": "beast within",
+    "type": "Instant",
+    "typeLine": "Instant",
+    "rarity": "rare",
+    "manaCost": "{2}{G}",
+    "manaValue": 3,
+    "colors": [
+      "G"
+    ],
+    "colorIdentity": [
+      "G"
+    ],
+    "oracleText": "Destroy target permanent. Its controller creates a 3/3 green Beast creature token.",
+    "keywords": [],
+    "imageUri": "https://cards.scryfall.io/normal/front/4/4/44e63c67-f7ae-4481-a27d-648fd4e98560.jpg?1783916407",
+    "artist": "Dave Allsop",
+    "producedMana": [],
+    "setCode": "PW23",
+    "setName": "Wizards Play Network 2023",
+    "collectorNumber": "3",
+    "priceUsdFoil": "4.99",
+    "scryfallUri": "https://scryfall.com/card/pw23/3/beast-within?utm_source=api",
+    "fetchedAt": 1788267457504
+  },
+  {
+    "cacheKey": "cheap:coiling oracle",
+    "id": "0c7b0fa1-bfc2-4b15-80ea-47e41a17aa2c",
+    "name": "Coiling Oracle",
+    "nameKey": "coiling oracle",
+    "type": "Creature",
+    "typeLine": "Creature — Snake Elf Druid",
+    "rarity": "rare",
+    "manaCost": "{G}{U}",
+    "manaValue": 2,
+    "colors": [
+      "G",
+      "U"
+    ],
+    "colorIdentity": [
+      "G",
+      "U"
+    ],
+    "oracleText": "When this creature enters, reveal the top card of your library. If it's a land card, put it onto the battlefield. Otherwise, put that card into your hand.",
+    "keywords": [],
+    "imageUri": "https://cards.scryfall.io/normal/front/0/c/0c7b0fa1-bfc2-4b15-80ea-47e41a17aa2c.jpg?1783943534",
+    "artist": "Mark Zug",
+    "producedMana": [],
+    "setCode": "PAL06",
+    "setName": "Arena League 2006",
+    "collectorNumber": "8",
+    "priceUsdFoil": "4.38",
+    "scryfallUri": "https://scryfall.com/card/pal06/8/coiling-oracle?utm_source=api",
+    "fetchedAt": 1788267456981
+  },
+  {
+    "cacheKey": "cheap:counterspell",
+    "id": "885b5ca4-b8e4-4a66-9508-a12396959253",
+    "name": "Counterspell",
+    "nameKey": "counterspell",
+    "type": "Instant",
+    "typeLine": "Instant",
+    "rarity": "uncommon",
+    "manaCost": "{U}{U}",
+    "manaValue": 2,
+    "colors": [
+      "U"
+    ],
+    "colorIdentity": [
+      "U"
+    ],
+    "oracleText": "Counter target spell.",
+    "keywords": [],
+    "imageUri": "https://cards.scryfall.io/normal/front/8/8/885b5ca4-b8e4-4a66-9508-a12396959253.jpg?1783948009",
+    "artist": "Mark Poole",
+    "producedMana": [],
+    "setCode": "SUM",
+    "setName": "Summer Magic / Edgar",
+    "collectorNumber": "54",
+    "scryfallUri": "https://scryfall.com/card/sum/54/counterspell?utm_source=api",
+    "fetchedAt": 1788267457329
+  },
+  {
+    "cacheKey": "cheap:cultivate",
+    "id": "a821a23a-be77-4965-b536-22903039ebe3",
+    "name": "Cultivate",
+    "nameKey": "cultivate",
+    "type": "Sorcery",
+    "typeLine": "Sorcery",
+    "rarity": "common",
+    "manaCost": "{2}{G}",
+    "manaValue": 3,
+    "colors": [
+      "G"
+    ],
+    "colorIdentity": [
+      "G"
+    ],
+    "oracleText": "Search your library for up to two basic land cards, reveal those cards, put one onto the battlefield tapped and the other into your hand, then shuffle.",
+    "keywords": [],
+    "imageUri": "https://cards.scryfall.io/normal/front/a/8/a821a23a-be77-4965-b536-22903039ebe3.jpg?1787673771",
+    "artist": "MSCHF",
+    "producedMana": [],
+    "setCode": "SLZ",
+    "setName": "The Zeta Set",
+    "collectorNumber": "74",
+    "scryfallUri": "https://scryfall.com/card/slz/74/cultivate?utm_source=api",
+    "fetchedAt": 1788267457903
+  },
+  {
+    "cacheKey": "cheap:dowsing device",
+    "id": "3d715e9f-223d-462e-8ce3-eebbaf1cd021",
+    "name": "Dowsing Device // Geode Grotto",
+    "nameKey": "dowsing device // geode grotto",
+    "type": "Artifact",
+    "typeLine": "Artifact // Land — Cave",
+    "rarity": "uncommon",
+    "manaCost": "{1}{R}",
+    "manaValue": 2,
+    "colors": [],
+    "colorIdentity": [
+      "R"
+    ],
+    "oracleText": "Whenever this artifact or another artifact you control enters, up to one target creature you control gets +1/+0 and gains haste until end of turn. Then transform this artifact if you control four or more artifacts.\n//\n(Transforms from Dowsing Device.)\n{T}: Add {R}.\n{2}{R}, {T}: Until end of turn, target creature gains haste and gets +X/+0, where X is the number of artifacts you control. Activate only as a sorcery.",
+    "keywords": [
+      "Transform"
+    ],
+    "imageUri": "https://cards.scryfall.io/normal/front/3/d/3d715e9f-223d-462e-8ce3-eebbaf1cd021.jpg?1783913769",
+    "backImageUri": "https://cards.scryfall.io/normal/back/3/d/3d715e9f-223d-462e-8ce3-eebbaf1cd021.jpg?1783913769",
+    "artist": "Olena Richards",
+    "producedMana": [
+      "R"
+    ],
+    "setCode": "LCI",
+    "setName": "The Lost Caverns of Ixalan",
+    "collectorNumber": "146",
+    "priceUsd": "0.32",
+    "priceUsdFoil": "0.42",
+    "scryfallUri": "https://scryfall.com/card/lci/146/dowsing-device-geode-grotto?utm_source=api",
+    "fetchedAt": 1788267459204
+  },
+  {
+    "cacheKey": "cheap:forest",
+    "id": "dce15387-4114-4b3e-91aa-5b42b45c44ac",
+    "name": "Forest",
+    "nameKey": "forest",
+    "type": "Land",
+    "typeLine": "Basic Land — Forest",
+    "rarity": "common",
+    "manaCost": "—",
+    "manaValue": 0,
+    "colors": [],
+    "colorIdentity": [
+      "G"
+    ],
+    "oracleText": "({T}: Add {G}.)",
+    "keywords": [],
+    "imageUri": "https://cards.scryfall.io/normal/front/d/c/dce15387-4114-4b3e-91aa-5b42b45c44ac.jpg?1785981675",
+    "artist": "Bastien Grivet",
+    "producedMana": [
+      "G"
+    ],
+    "setCode": "TRK",
+    "setName": "Star Trek",
+    "collectorNumber": "325",
+    "scryfallUri": "https://scryfall.com/card/trk/325/forest?utm_source=api",
+    "fetchedAt": 1788267458828
+  },
+  {
+    "cacheKey": "cheap:glóin the mighty",
+    "id": "5546390b-3957-4e3b-aa64-85692381f53f",
+    "name": "Glóin the Mighty // Easy Pickings",
+    "nameKey": "glóin the mighty // easy pickings",
+    "type": "Creature",
+    "typeLine": "Legendary Creature — Dwarf Warrior // Sorcery — Adventure",
+    "rarity": "uncommon",
+    "manaCost": "{3}{R} // {2}{R}",
+    "manaValue": 4,
+    "colors": [
+      "R"
+    ],
+    "colorIdentity": [
+      "R"
+    ],
+    "oracleText": "At the beginning of your first main phase, add {R}{R}.\n//\nEasy Pickings deals 1 damage to each creature your opponents control. (Then exile this card. You may cast the creature later from exile.)",
+    "keywords": [],
+    "imageUri": "https://cards.scryfall.io/normal/front/5/5/5546390b-3957-4e3b-aa64-85692381f53f.jpg?1785323380",
+    "artist": "Francisco Badilla",
+    "producedMana": [
+      "R"
+    ],
+    "setCode": "HOB",
+    "setName": "The Hobbit",
+    "collectorNumber": "263",
+    "priceUsdFoil": "2.89",
+    "scryfallUri": "https://scryfall.com/card/hob/263/gl%C3%B3in-the-mighty-easy-pickings?utm_source=api",
+    "fetchedAt": 1788267459386
+  },
+  {
+    "cacheKey": "cheap:growth spiral",
+    "id": "288ed3e9-4485-44ad-8561-efa09ed96f34",
+    "name": "Growth Spiral",
+    "nameKey": "growth spiral",
+    "type": "Instant",
+    "typeLine": "Instant",
+    "rarity": "common",
+    "manaCost": "{G}{U}",
+    "manaValue": 2,
+    "colors": [
+      "G",
+      "U"
+    ],
+    "colorIdentity": [
+      "G",
+      "U"
+    ],
+    "oracleText": "Draw a card. You may put a land card from your hand onto the battlefield.",
+    "keywords": [],
+    "imageUri": "https://cards.scryfall.io/normal/front/2/8/288ed3e9-4485-44ad-8561-efa09ed96f34.jpg?1783933583",
+    "artist": "Seb McKinnon",
+    "producedMana": [],
+    "setCode": "PRNA",
+    "setName": "Ravnica Allegiance Promos",
+    "collectorNumber": "178",
+    "priceUsdFoil": "1.87",
+    "scryfallUri": "https://scryfall.com/card/prna/178/growth-spiral?utm_source=api",
+    "fetchedAt": 1788267457155
+  },
+  {
+    "cacheKey": "cheap:island",
+    "id": "f3cc07cd-cc79-4745-b0b7-eade60175cc3",
+    "name": "Island",
+    "nameKey": "island",
+    "type": "Land",
+    "typeLine": "Basic Land — Island",
+    "rarity": "common",
+    "manaCost": "—",
+    "manaValue": 0,
+    "colors": [],
+    "colorIdentity": [
+      "U"
+    ],
+    "oracleText": "({T}: Add {U}.)",
+    "keywords": [],
+    "imageUri": "https://cards.scryfall.io/normal/front/f/3/f3cc07cd-cc79-4745-b0b7-eade60175cc3.jpg?1785981645",
+    "artist": "Bastien Grivet",
+    "producedMana": [
+      "U"
+    ],
+    "setCode": "TRK",
+    "setName": "Star Trek",
+    "collectorNumber": "319",
+    "scryfallUri": "https://scryfall.com/card/trk/319/island?utm_source=api",
+    "fetchedAt": 1788267459019
+  },
+  {
+    "cacheKey": "cheap:maelstrom artisan",
+    "id": "5c88391d-271f-4021-a5d9-158ebc1e6357",
+    "name": "Maelstrom Artisan // Rocket Volley",
+    "nameKey": "maelstrom artisan // rocket volley",
+    "type": "Creature",
+    "typeLine": "Creature — Minotaur Sorcerer // Sorcery",
+    "rarity": "rare",
+    "manaCost": "{1}{R}{R} // {1}{R}",
+    "manaValue": 3,
+    "colors": [
+      "R"
+    ],
+    "colorIdentity": [
+      "R"
+    ],
+    "oracleText": "Haste\nThis creature enters prepared. (While it's prepared, you may cast a copy of its spell. Doing so unprepares it.)\n//\nDestroy target nonbasic land.",
+    "keywords": [
+      "Haste",
+      "Prepared"
+    ],
+    "imageUri": "https://cards.scryfall.io/normal/front/5/c/5c88391d-271f-4021-a5d9-158ebc1e6357.jpg?1783903667",
+    "artist": "Eelis Kyttanen",
+    "producedMana": [],
+    "setCode": "SOS",
+    "setName": "Secrets of Strixhaven",
+    "collectorNumber": "122",
+    "priceUsd": "0.17",
+    "priceUsdFoil": "0.39",
+    "scryfallUri": "https://scryfall.com/card/sos/122/maelstrom-artisan-rocket-volley?utm_source=api",
+    "fetchedAt": 1788267459563
+  },
+  {
+    "cacheKey": "cheap:sakura-tribe elder",
+    "id": "bf0b01ab-c846-459b-8d6f-7e5cb75a5d26",
+    "name": "Sakura-Tribe Elder",
+    "nameKey": "sakura-tribe elder",
+    "type": "Creature",
+    "typeLine": "Creature — Snake Shaman",
+    "rarity": "rare",
+    "manaCost": "{1}{G}",
+    "manaValue": 2,
+    "colors": [
+      "G"
+    ],
+    "colorIdentity": [
+      "G"
+    ],
+    "oracleText": "Sacrifice this creature: Search your library for a basic land card, put that card onto the battlefield tapped, then shuffle.",
+    "keywords": [],
+    "imageUri": "https://cards.scryfall.io/normal/front/b/f/bf0b01ab-c846-459b-8d6f-7e5cb75a5d26.jpg?1783910886",
+    "artist": "Victor Adame Minguez",
+    "producedMana": [],
+    "setCode": "PLG24",
+    "setName": "Love Your LGS 2024",
+    "collectorNumber": "1",
+    "priceUsdFoil": "4.51",
+    "scryfallUri": "https://scryfall.com/card/plg24/1/sakura-tribe-elder?utm_source=api",
+    "fetchedAt": 1788267456805
+  },
+  {
+    "cacheKey": "cheap:scute swarm",
+    "id": "e1915e0e-15ae-4fbf-9b8a-b02d41d371cd",
+    "name": "Scute Swarm",
+    "nameKey": "scute swarm",
+    "type": "Creature",
+    "typeLine": "Creature — Insect",
+    "rarity": "rare",
+    "manaCost": "{2}{G}",
+    "manaValue": 3,
+    "colors": [
+      "G"
+    ],
+    "colorIdentity": [
+      "G"
+    ],
+    "oracleText": "Landfall — Whenever a land you control enters, create a 1/1 green Insect creature token. If you control six or more lands, create a token that's a copy of this creature instead.",
+    "keywords": [
+      "Landfall"
+    ],
+    "imageUri": "https://cards.scryfall.io/normal/front/e/1/e1915e0e-15ae-4fbf-9b8a-b02d41d371cd.jpg?1787745765",
+    "artist": "MSCHF",
+    "producedMana": [],
+    "setCode": "SLZ",
+    "setName": "The Zeta Set",
+    "collectorNumber": "84",
+    "scryfallUri": "https://scryfall.com/card/slz/84/scute-swarm?utm_source=api",
+    "fetchedAt": 1788267458093
+  },
+  {
+    "cacheKey": "cheap:sol ring",
+    "id": "9138d11a-d55f-4c46-bb27-7e8e15a44e8c",
+    "name": "Sol Ring",
+    "nameKey": "sol ring",
+    "type": "Artifact",
+    "typeLine": "Artifact",
+    "rarity": "uncommon",
+    "manaCost": "{1}",
+    "manaValue": 1,
+    "colors": [],
+    "colorIdentity": [],
+    "oracleText": "{T}: Add {C}{C}.",
+    "keywords": [],
+    "imageUri": "https://cards.scryfall.io/normal/front/9/1/9138d11a-d55f-4c46-bb27-7e8e15a44e8c.jpg?1783947957",
+    "artist": "Mark Tedin",
+    "producedMana": [
+      "C"
+    ],
+    "setCode": "SUM",
+    "setName": "Summer Magic / Edgar",
+    "collectorNumber": "274",
+    "scryfallUri": "https://scryfall.com/card/sum/274/sol-ring?utm_source=api",
+    "fetchedAt": 1788267456448
+  },
+  {
+    "cacheKey": "cheap:sundering eruption",
+    "id": "50686ac7-346c-43d1-bdaa-28d46a12ad93",
+    "name": "Sundering Eruption // Volcanic Fissure",
+    "nameKey": "sundering eruption // volcanic fissure",
+    "type": "Sorcery",
+    "typeLine": "Sorcery // Land",
+    "rarity": "uncommon",
+    "manaCost": "{2}{R}",
+    "manaValue": 3,
+    "colors": [],
+    "colorIdentity": [
+      "R"
+    ],
+    "oracleText": "Destroy target land. Its controller may search their library for a basic land card, put it onto the battlefield tapped, then shuffle. Creatures without flying can't block this turn.\n//\nAs this land enters, you may pay 3 life. If you don't, it enters tapped.\n{T}: Add {R}.",
+    "keywords": [],
+    "imageUri": "https://cards.scryfall.io/normal/front/5/0/50686ac7-346c-43d1-bdaa-28d46a12ad93.jpg?1783911228",
+    "backImageUri": "https://cards.scryfall.io/normal/back/5/0/50686ac7-346c-43d1-bdaa-28d46a12ad93.jpg?1783911228",
+    "artist": "Yohann Schepacz",
+    "producedMana": [
+      "R"
+    ],
+    "setCode": "MH3",
+    "setName": "Modern Horizons 3",
+    "collectorNumber": "248",
+    "priceUsd": "1.43",
+    "priceUsdFoil": "3.96",
+    "scryfallUri": "https://scryfall.com/card/mh3/248/sundering-eruption-volcanic-fissure?utm_source=api",
+    "fetchedAt": 1788267459749
+  },
+  {
+    "cacheKey": "cheap:tatyova, benthic druid",
+    "id": "7be895ac-5a45-4195-99df-386197d6b106",
+    "name": "Tatyova, Benthic Druid",
+    "nameKey": "tatyova, benthic druid",
+    "type": "Creature",
+    "typeLine": "Legendary Creature — Merfolk Druid",
+    "rarity": "uncommon",
+    "manaCost": "{3}{G}{U}",
+    "manaValue": 5,
+    "colors": [
+      "G",
+      "U"
+    ],
+    "colorIdentity": [
+      "G",
+      "U"
+    ],
+    "oracleText": "Landfall — Whenever a land you control enters, you gain 1 life and draw a card.",
+    "keywords": [
+      "Landfall"
+    ],
+    "imageUri": "https://cards.scryfall.io/normal/front/7/b/7be895ac-5a45-4195-99df-386197d6b106.jpg?1783934891",
+    "artist": "Mathias Kollros",
+    "producedMana": [],
+    "setCode": "PDOM",
+    "setName": "Dominaria Promos",
+    "collectorNumber": "206s",
+    "priceUsdFoil": "5.14",
+    "scryfallUri": "https://scryfall.com/card/pdom/206s/tatyova-benthic-druid?utm_source=api",
+    "fetchedAt": 1788267458459
+  },
+  {
+    "cacheKey": "cheap:ticket booth",
+    "id": "058ffe36-ed2d-4b67-83cd-162db8383a32",
+    "name": "Ticket Booth // Tunnel of Hate",
+    "nameKey": "ticket booth // tunnel of hate",
+    "type": "Enchantment",
+    "typeLine": "Enchantment — Room // Enchantment — Room",
+    "rarity": "common",
+    "manaCost": "{2}{R} // {4}{R}{R}",
+    "manaValue": 9,
+    "colors": [
+      "R"
+    ],
+    "colorIdentity": [
+      "R"
+    ],
+    "oracleText": "When you unlock this door, manifest dread.\n(You may cast either half. That door unlocks on the battlefield. As a sorcery, you may pay the mana cost of a locked door to unlock it.)\n//\nWhenever you attack, target attacking creature gains double strike until end of turn.\n(You may cast either half. That door unlocks on the battlefield. As a sorcery, you may pay the mana cost of a locked door to unlock it.)",
+    "keywords": [
+      "Manifest",
+      "Manifest dread"
+    ],
+    "imageUri": "https://cards.scryfall.io/normal/front/0/5/058ffe36-ed2d-4b67-83cd-162db8383a32.jpg?1783909461",
+    "artist": "Marco Gorlei",
+    "producedMana": [],
+    "setCode": "DSK",
+    "setName": "Duskmourn: House of Horror",
+    "collectorNumber": "158",
+    "priceUsd": "0.16",
+    "priceUsdFoil": "0.28",
+    "scryfallUri": "https://scryfall.com/card/dsk/158/ticket-booth-tunnel-of-hate?utm_source=api",
+    "fetchedAt": 1788267459936
+  },
+  {
+    "cacheKey": "cheap:tireless provisioner",
+    "id": "6d2e2e8d-8382-4d98-9e25-2dff1b1d0ff8",
+    "name": "Tireless Provisioner",
+    "nameKey": "tireless provisioner",
+    "type": "Creature",
+    "typeLine": "Creature — Elf Scout",
+    "rarity": "rare",
+    "manaCost": "{2}{G}",
+    "manaValue": 3,
+    "colors": [
+      "G"
+    ],
+    "colorIdentity": [
+      "G"
+    ],
+    "oracleText": "Landfall — Whenever a land you control enters, create a Food token or a Treasure token. (Food is an artifact with \"{2}, {T}, Sacrifice this token: You gain 3 life.\" Treasure is an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")",
+    "keywords": [
+      "Treasure",
+      "Food",
+      "Landfall"
+    ],
+    "imageUri": "https://cards.scryfall.io/normal/front/6/d/6d2e2e8d-8382-4d98-9e25-2dff1b1d0ff8.jpg?1783902792",
+    "artist": "Lucie Louxor",
+    "producedMana": [
+      "B",
+      "G",
+      "R",
+      "U",
+      "W"
+    ],
+    "setCode": "SLD",
+    "setName": "Secret Lair Drop",
+    "collectorNumber": "2661",
+    "priceUsdFoil": "7.93",
+    "scryfallUri": "https://scryfall.com/card/sld/2661/tireless-provisioner?utm_source=api",
+    "fetchedAt": 1788267458276
+  },
+  {
+    "cacheKey": "cheap:urban evolution",
+    "id": "c5d74ebd-9674-4bcc-b51e-d46e7b5cbc72",
+    "name": "Urban Evolution",
+    "nameKey": "urban evolution",
+    "type": "Sorcery",
+    "typeLine": "Sorcery",
+    "rarity": "uncommon",
+    "manaCost": "{3}{G}{U}",
+    "manaValue": 5,
+    "colors": [
+      "G",
+      "U"
+    ],
+    "colorIdentity": [
+      "G",
+      "U"
+    ],
+    "oracleText": "Draw three cards. You may play an additional land this turn.",
+    "keywords": [],
+    "imageUri": "https://cards.scryfall.io/normal/front/c/5/c5d74ebd-9674-4bcc-b51e-d46e7b5cbc72.jpg?1783933773",
+    "artist": "Eytan Zana",
+    "producedMana": [],
+    "setCode": "UMA",
+    "setName": "Ultimate Masters",
+    "collectorNumber": "208",
+    "priceUsd": "0.12",
+    "priceUsdFoil": "0.43",
+    "scryfallUri": "https://scryfall.com/card/uma/208/urban-evolution?utm_source=api",
+    "fetchedAt": 1788267458632
+  }
+]

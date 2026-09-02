@@ -1,0 +1,132 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-geist-sans);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  color-scheme: dark;
+  --background: oklch(0.105 0.008 145);
+  --foreground: oklch(0.95 0.006 120);
+  --card: oklch(0.14 0.01 145);
+  --card-foreground: oklch(0.95 0.006 120);
+  --popover: oklch(0.14 0.01 145);
+  --popover-foreground: oklch(0.95 0.006 120);
+  --primary: oklch(0.89 0.18 125);
+  --primary-foreground: oklch(0.15 0.04 125);
+  --secondary: oklch(0.19 0.015 145);
+  --secondary-foreground: oklch(0.9 0.01 120);
+  --muted: oklch(0.18 0.012 145);
+  --muted-foreground: oklch(0.6 0.01 130);
+  --accent: oklch(0.22 0.025 130);
+  --accent-foreground: oklch(0.92 0.02 120);
+  --destructive: oklch(0.64 0.2 28);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 12%);
+  --ring: oklch(0.82 0.17 125);
+  --radius: 0.65rem;
+}
+
+* { border-color: var(--border); outline-color: color-mix(in oklab, var(--ring) 50%, transparent); }
+html { background: var(--background); }
+body {
+  min-height: 100vh;
+  background: radial-gradient(circle at 78% -20%, rgba(190, 242, 100, 0.055), transparent 30rem), var(--background);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+button, select, textarea, input { font: inherit; }
+::selection { background: rgba(190, 242, 100, 0.24); color: white; }
+
+/* Keep the cut-analysis preview compact and horizontal before the browser grid. */
+main > div > section.mb-7 > div.grid > div:first-child {
+  width: 150px;
+  max-width: 150px;
+  align-self: start;
+}
+
+@media (min-width: 1024px) {
+  main > div > section.mb-7 > div.grid {
+    grid-template-columns: 150px minmax(260px, 0.7fr) minmax(380px, 1.3fr);
+    align-items: start;
+  }
+}
+
+/* The cut triage browser is a bounded window; the aggregate preview follows it. */
+main > div > section.mb-7 + section > div.grid {
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+main > div > section.mb-7 article:nth-child(2) > div:nth-child(2) span {
+  cursor: pointer;
+}
+
+main > div > section.mb-7 article:nth-child(2) > div:nth-child(2) span:hover {
+  border-color: rgba(190, 242, 100, 0.5);
+  background: rgba(190, 242, 100, 0.1);
+}
+
+.ignored-synergy-connection {
+  border-color: rgba(252, 165, 165, 0.32) !important;
+  background: rgba(252, 165, 165, 0.1) !important;
+  color: rgb(254, 202, 202) !important;
+}
+
+.ignored-synergy-connection:hover {
+  border-color: rgba(252, 165, 165, 0.55) !important;
+  background: rgba(252, 165, 165, 0.16) !important;
+}
+
+@media (min-width: 768px) {
+  [aria-labelledby="synergy-dialog-title"] button:hover > div:first-child {
+    overflow: visible;
+  }
+
+  [aria-labelledby="synergy-dialog-title"] button:hover > div:first-child img {
+    position: fixed;
+    z-index: 80;
+    top: 50%;
+    left: max(1.5rem, calc(50vw - 34rem));
+    width: min(280px, 28vw);
+    height: auto;
+    max-height: 78vh;
+    transform: translateY(-50%);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 0.8rem;
+    object-fit: contain;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.65);
+    pointer-events: none;
+  }
+}
