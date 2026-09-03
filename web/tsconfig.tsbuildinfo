@@ -1,0 +1,1 @@
+{"root":["./src/main.tsx","./src/app.tsx","./src/lib/card-cache.ts","./src/lib/scryfall.ts","./src/lib/utils.ts","./src/components/ui/badge.tsx","./src/components/ui/button.tsx","./src/components/ui/native-select.tsx","./src/components/ui/textarea.tsx","./vite.config.ts"],"version":"5.9.3"}

@@ -22,7 +22,7 @@ export type CachedCardData = {
   priceUsd?: string;
   priceUsdFoil?: string;
   priceUsdEtched?: string;
-  edhrecRank?: number;
+  edhrecRank?: number | null;
   scryfallUri: string;
   fetchedAt: number;
 };
@@ -37,7 +37,8 @@ function openDatabase(): Promise<IDBDatabase> {
     const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
     request.onupgradeneeded = () => {
       const database = request.result;
-      if (database.objectStoreNames.contains(STORE_NAME)) database.deleteObjectStore(STORE_NAME);
+      if (database.objectStoreNames.contains(STORE_NAME))
+        database.deleteObjectStore(STORE_NAME);
       database.createObjectStore(STORE_NAME, { keyPath: 'cacheKey' });
     };
     request.onsuccess = () => resolve(request.result);
@@ -53,18 +54,25 @@ function requestResult<T>(request: IDBRequest<T>): Promise<T> {
 }
 
 export async function getCachedCards(keys: string[]) {
-  if (typeof indexedDB === 'undefined') return new Map<string, CachedCardData>();
+  if (typeof indexedDB === 'undefined')
+    return new Map<string, CachedCardData>();
   const database = await openDatabase();
   const transaction = database.transaction(STORE_NAME, 'readonly');
   const store = transaction.objectStore(STORE_NAME);
   const entries = await Promise.all(
     keys.map(async (cacheKey) => {
-      const card = await requestResult<CachedCardData | undefined>(store.get(cacheKey));
+      const card = await requestResult<CachedCardData | undefined>(
+        store.get(cacheKey),
+      );
       return [cacheKey, card] as const;
     }),
   );
   database.close();
-  return new Map(entries.filter((entry): entry is [string, CachedCardData] => Boolean(entry[1])));
+  return new Map(
+    entries.filter((entry): entry is [string, CachedCardData] =>
+      Boolean(entry[1]),
+    ),
+  );
 }
 
 export async function cacheCards(cards: CachedCardData[]) {

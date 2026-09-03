@@ -65,7 +65,7 @@ function normalizeCard(card, requestedName = card.name) {
     priceUsd: card.prices?.usd ?? undefined,
     priceUsdFoil: card.prices?.usd_foil ?? undefined,
     priceUsdEtched: card.prices?.usd_etched ?? undefined,
-    edhrecRank: card.edhrec_rank ?? undefined,
+    edhrecRank: card.edhrec_rank ?? null,
     scryfallUri: card.scryfall_uri,
     fetchedAt: Date.now(),
   };

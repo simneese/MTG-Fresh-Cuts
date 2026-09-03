@@ -894,14 +894,23 @@ export default function CutWorkspace({
                     >
                       <div className="flex items-end justify-between">
                         <p className="font-mono text-xl font-semibold text-white">
-                          {Math.round(focused[value] * 100)}
+                          {value === 'popularity' &&
+                          !focused.card.cardData?.edhrecRank
+                            ? 'N/A'
+                            : Math.round(focused[value] * 100)}
                         </p>
                         <p className="text-[9px] text-zinc-600">{label}</p>
                       </div>
                       <div className="mt-2 h-1 overflow-hidden rounded-full bg-white/5">
                         <div
                           className="h-full bg-lime-300"
-                          style={{ width: `${focused[value] * 100}%` }}
+                          style={{
+                            width:
+                              value === 'popularity' &&
+                              !focused.card.cardData?.edhrecRank
+                                ? '0%'
+                                : `${focused[value] * 100}%`,
+                          }}
                         />
                       </div>
                     </div>
