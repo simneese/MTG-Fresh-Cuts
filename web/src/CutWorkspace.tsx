@@ -348,6 +348,24 @@ function curvePenalty(curve: number[]) {
   }, 0);
   return targetExcess + crowdedTail * 0.8;
 }
+function budgetToSliderPosition(budget: number | null) {
+  if (budget === null) return 0;
+  return budget <= 200
+    ? budget / 2
+    : budget <= 1000
+      ? 100 + (budget - 200) / 8
+      : 200 + (Math.min(10000, budget) - 1000) / 90;
+}
+function sliderPositionToBudget(position: number) {
+  if (position <= 0) return null;
+  return Math.round(
+    position <= 100
+      ? position * 2
+      : position <= 200
+        ? 200 + (position - 100) * 8
+        : 1000 + (position - 200) * 90,
+  );
+}
 export default function CutWorkspace({
   deckName,
   commander,
@@ -363,6 +381,7 @@ export default function CutWorkspace({
     'undecided',
   );
   const [groupByMana, setGroupByMana] = useState(false);
+  const [budget, setBudget] = useState<number | null>(null);
   const [selectedSynergy, setSelectedSynergy] = useState('');
   const [ignoredSynergies, setIgnoredSynergies] = useState<Set<string>>(
     new Set(),
@@ -384,6 +403,26 @@ export default function CutWorkspace({
     });
     return curve;
   }, [baseCurve, cards, selectedCuts]);
+  const totalDeckPrice = useMemo(
+    () =>
+      cards.reduce(
+        (total, card) => total + priceOf(card) * card.quantity,
+        0,
+      ),
+    [cards],
+  );
+  const workingDeckPrice = useMemo(
+    () =>
+      Math.max(
+        0,
+        totalDeckPrice -
+          [...selectedCuts].reduce((total, key) => {
+            const card = cards.find((entry) => keyOf(entry) === key);
+            return total + (card ? priceOf(card) * card.quantity : 0);
+          }, 0),
+      ),
+    [cards, selectedCuts, totalDeckPrice],
+  );
   const knownCreatureTypes = useMemo(
     () => [...new Set(cards.flatMap((card) => creatureTypesOf(card)))],
     [cards],
@@ -394,7 +433,6 @@ export default function CutWorkspace({
         card.name !== commander &&
         !card.cardData?.typeLine?.startsWith('Basic Land'),
     );
-    const maxPrice = Math.max(1, ...eligible.map(priceOf));
     const frequency = new Map<string, number>();
     eligible.forEach((card) =>
       synergyTags(card, knownCreatureTypes)
@@ -464,13 +502,19 @@ export default function CutWorkspace({
             commanderOverlap * 0.3 +
             commanderCreatureBoost * 0.25,
         );
-      const price = priceOf(card) / maxPrice;
+      const cardValue = priceOf(card) * card.quantity;
+      const priceIsActive = budget !== null;
+      const price = priceIsActive
+        ? Math.min(1, cardValue / Math.max(0.01, budget))
+        : 0;
       return {
         card,
         curve,
         synergy,
         price,
-        all: curve * 0.45 + synergy * 0.35 + price * 0.2,
+        all: priceIsActive
+          ? curve * 0.45 + synergy * 0.35 + price * 0.2
+          : curve * 0.5625 + synergy * 0.4375,
         tags: allTags,
         activeTags: tags,
         afterCurve,
@@ -485,6 +529,7 @@ export default function CutWorkspace({
     knownCreatureTypes,
     selectedCuts,
     ignoredSynergies,
+    budget,
   ]);
   const allRanked = useMemo(
     () => [...recommendations].sort((a, b) => b[criterion] - a[criterion]),
@@ -716,6 +761,68 @@ export default function CutWorkspace({
             </Button>
           )}
         </div>
+        <section className="mb-5 rounded-2xl border border-white/8 bg-[#101311] px-4 py-3">
+          <div className="grid gap-3 lg:grid-cols-[180px_minmax(240px,1fr)_150px_220px] lg:items-center">
+            <div>
+              <p className="text-xs font-semibold text-zinc-200">Deck budget</p>
+              <p className="mt-0.5 text-[10px] text-zinc-600">
+                {budget === null
+                  ? 'None · price scoring disabled'
+                  : workingDeckPrice > budget
+                    ? `$${(workingDeckPrice - budget).toFixed(2)} over budget`
+                    : 'Within budget · price scoring active'}
+              </p>
+            </div>
+            <div>
+              <input
+                type="range"
+                min="0"
+                max="300"
+                step="0.5"
+                value={budgetToSliderPosition(budget)}
+                onChange={(event) => {
+                  setBudget(sliderPositionToBudget(Number(event.target.value)));
+                }}
+                className="h-1.5 w-full cursor-pointer accent-lime-300"
+                aria-label="Deck budget"
+              />
+              <div className="relative mt-1 h-3 text-[9px] font-medium text-zinc-600">
+                <span className="absolute left-0">None</span>
+                <span className="absolute left-1/3 -translate-x-1/2">$200</span>
+                <span className="absolute left-2/3 -translate-x-1/2">$1,000</span>
+                <span className="absolute right-0">$10,000</span>
+              </div>
+            </div>
+            <label className="flex items-center rounded-lg border border-white/10 bg-black/20 px-3 py-2 focus-within:border-lime-300/40">
+              <span className="mr-1 text-xs text-zinc-500">$</span>
+              <input
+                type="number"
+                min="0"
+                max="10000"
+                step="1"
+                value={budget ?? ''}
+                placeholder="None"
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  setBudget(
+                    event.target.value !== '' && value > 0
+                      ? Math.min(10000, value)
+                      : null,
+                  );
+                }}
+                className="min-w-0 flex-1 bg-transparent text-sm text-zinc-200 outline-none placeholder:text-zinc-600"
+                aria-label="Type a deck budget"
+              />
+            </label>
+            <p className="text-right font-mono text-xs text-zinc-400 lg:text-left">
+              Current deck{' '}
+              <span className="text-zinc-100">${workingDeckPrice.toFixed(2)}</span>
+              {budget !== null && (
+                <span className="text-zinc-600"> / ${budget.toFixed(2)}</span>
+              )}
+            </p>
+          </div>
+        </section>
         {focused && (
           <section className="mb-7 rounded-2xl border border-lime-300/15 bg-[#101311] p-5">
             <div className="grid gap-5 xl:grid-cols-[190px_minmax(300px,.8fr)_minmax(420px,1.2fr)]">
@@ -736,13 +843,28 @@ export default function CutWorkspace({
                 <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-lime-300">
                   Interactive preview
                 </p>
-                <h2 className="mt-1 font-heading text-2xl font-semibold text-white">
-                  {focused.card.name}
-                </h2>
+                <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                  <h2 className="font-heading text-2xl font-semibold text-white">
+                    {focused.card.name}
+                  </h2>
+                  {priceOf(focused.card) > 0 && (
+                    <span className="font-mono text-xs font-normal text-zinc-600">
+                      ${priceOf(focused.card).toFixed(2)}
+                    </span>
+                  )}
+                </div>
                 <p className="mt-1 text-xs text-zinc-600">
                   {focused.card.cardData?.typeLine}
                 </p>
                 <div className="mt-3 max-h-36 overflow-y-auto rounded-xl border border-white/8 bg-black/20 p-3">
+                  <div className="mb-2 flex items-center justify-between gap-3 border-b border-white/8 pb-2 text-[10px]">
+                    <span className="font-medium uppercase tracking-wider text-zinc-600">
+                      Mana cost
+                    </span>
+                    <span className="font-mono text-xs font-semibold text-zinc-300">
+                      {focused.card.cardData?.manaCost || 'No mana cost'}
+                    </span>
+                  </div>
                   <HighlightedRulesText
                     text={focused.card.cardData?.oracleText ?? ''}
                     tags={focused.tags}
@@ -776,9 +898,10 @@ export default function CutWorkspace({
                     </div>
                   ))}
                 </div>
-                <div className="mt-4 grid grid-cols-3 gap-2">
+                <div className="mt-4 grid grid-cols-2 gap-2">
                   <Button
                     variant="ghost"
+                    className="col-span-2"
                     disabled={
                       !selectedCuts.has(keyOf(focused.card)) &&
                       !keptCards.has(keyOf(focused.card))

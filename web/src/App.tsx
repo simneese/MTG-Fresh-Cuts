@@ -82,8 +82,14 @@ function parseCardLookup(rawName: string): CardLookup {
 function parseDeckList(input: string) {
   const cards = new Map<string, ParsedCard>();
   const errors: string[] = [];
+  let reachedSideboard = false;
   input.split(/\r?\n/).forEach((rawLine, index) => {
     const line = rawLine.trim();
+    if (reachedSideboard) return;
+    if (/^(?:#+\s*)?sideboard\s*:/i.test(line)) {
+      reachedSideboard = true;
+      return;
+    }
     if (!line || line.startsWith('//') || line.startsWith('#')) return;
     if (SECTION_HEADERS.has(line.replace(/:$/, '').toLowerCase())) return;
     const match = line.match(/^(?:(\d+)\s*x?\s+)?(.+?)\s*$/i);
