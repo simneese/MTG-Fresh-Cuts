@@ -22,6 +22,7 @@ export type CachedCardData = {
   priceUsd?: string;
   priceUsdFoil?: string;
   priceUsdEtched?: string;
+  edhrecRank?: number;
   scryfallUri: string;
   fetchedAt: number;
 };

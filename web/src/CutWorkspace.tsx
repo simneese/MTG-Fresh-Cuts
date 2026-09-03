@@ -12,7 +12,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type { WorkspaceCard } from '@/DeckWorkspace';
-type Criterion = 'all' | 'curve' | 'synergy' | 'price';
+type Criterion = 'all' | 'curve' | 'synergy' | 'price' | 'popularity';
 type Props = {
   deckName: string;
   commander: string;
@@ -71,6 +71,11 @@ function priceOf(card: WorkspaceCard) {
           card.cardData?.priceUsdEtched ??
           0),
   );
+}
+function popularityCutScore(card: WorkspaceCard) {
+  const rank = card.cardData?.edhrecRank;
+  if (!rank || rank < 1) return 0.5;
+  return Math.min(1, Math.log10(rank + 1) / Math.log10(25000));
 }
 function creatureTypesOf(card?: WorkspaceCard) {
   const frontType = card?.cardData?.typeLine?.split('//')[0] ?? '';
@@ -405,10 +410,7 @@ export default function CutWorkspace({
   }, [baseCurve, cards, selectedCuts]);
   const totalDeckPrice = useMemo(
     () =>
-      cards.reduce(
-        (total, card) => total + priceOf(card) * card.quantity,
-        0,
-      ),
+      cards.reduce((total, card) => total + priceOf(card) * card.quantity, 0),
     [cards],
   );
   const workingDeckPrice = useMemo(
@@ -507,14 +509,16 @@ export default function CutWorkspace({
       const price = priceIsActive
         ? Math.min(1, cardValue / Math.max(0.01, budget))
         : 0;
+      const popularity = popularityCutScore(card);
       return {
         card,
         curve,
         synergy,
         price,
+        popularity,
         all: priceIsActive
-          ? curve * 0.45 + synergy * 0.35 + price * 0.2
-          : curve * 0.5625 + synergy * 0.4375,
+          ? curve * 0.4 + synergy * 0.3 + price * 0.2 + popularity * 0.1
+          : curve * 0.5 + synergy * 0.375 + popularity * 0.125,
         tags: allTags,
         activeTags: tags,
         afterCurve,
@@ -789,7 +793,9 @@ export default function CutWorkspace({
               <div className="relative mt-1 h-3 text-[9px] font-medium text-zinc-600">
                 <span className="absolute left-0">None</span>
                 <span className="absolute left-1/3 -translate-x-1/2">$200</span>
-                <span className="absolute left-2/3 -translate-x-1/2">$1,000</span>
+                <span className="absolute left-2/3 -translate-x-1/2">
+                  $1,000
+                </span>
                 <span className="absolute right-0">$10,000</span>
               </div>
             </div>
@@ -816,7 +822,9 @@ export default function CutWorkspace({
             </label>
             <p className="text-right font-mono text-xs text-zinc-400 lg:text-left">
               Current deck{' '}
-              <span className="text-zinc-100">${workingDeckPrice.toFixed(2)}</span>
+              <span className="text-zinc-100">
+                ${workingDeckPrice.toFixed(2)}
+              </span>
               {budget !== null && (
                 <span className="text-zinc-600"> / ${budget.toFixed(2)}</span>
               )}
@@ -877,6 +885,7 @@ export default function CutWorkspace({
                       ['curve', 'Curve'],
                       ['synergy', 'Low synergy'],
                       ['price', 'Price'],
+                      ['popularity', 'Low popularity'],
                     ] as const
                   ).map(([value, label]) => (
                     <div
@@ -952,6 +961,9 @@ export default function CutWorkspace({
                   {priceOf(focused.card)
                     ? ` This printing is approximately $${priceOf(focused.card).toFixed(2)}.`
                     : ''}
+                  {focused.card.cardData?.edhrecRank
+                    ? ` Its EDHREC rank is ${focused.card.cardData.edhrecRank.toLocaleString()}.`
+                    : ' No EDHREC rank is currently available.'}
                 </p>
               </div>
               <div className="grid gap-4 md:grid-cols-2">
@@ -1101,6 +1113,7 @@ export default function CutWorkspace({
                     ['curve', 'Mana curve'],
                     ['synergy', 'Synergy'],
                     ['price', 'Price'],
+                    ['popularity', 'EDHREC popularity'],
                   ] as const
                 ).map(([value, label]) => (
                   <Button
