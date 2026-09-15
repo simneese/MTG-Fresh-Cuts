@@ -68,20 +68,6 @@ body {
 button, select, textarea, input { font: inherit; }
 ::selection { background: rgba(190, 242, 100, 0.24); color: white; }
 
-/* Keep the cut-analysis preview compact and horizontal before the browser grid. */
-main > div > section.mb-7 > div.grid > div:first-child {
-  width: 150px;
-  max-width: 150px;
-  align-self: start;
-}
-
-@media (min-width: 1024px) {
-  main > div > section.mb-7 > div.grid {
-    grid-template-columns: 150px minmax(260px, 0.7fr) minmax(380px, 1.3fr);
-    align-items: start;
-  }
-}
-
 /* The cut triage browser is a bounded window; the aggregate preview follows it. */
 main > div > section.mb-7 + section > div.grid {
   max-height: 360px;

@@ -22,8 +22,22 @@ type Props = {
   target: number;
   onBack: () => void;
 };
-const CURVE_TARGET = [0.02, 0.1, 0.25, 0.28, 0.17, 0.1, 0.05, 0.03];
-const CURVE_BUCKET_WEIGHT = [0.7, 0.8, 0.9, 1, 1.2, 1.45, 1.75, 2.1];
+const CURVE_TARGET = [0.02, 0.1, 0.25, 0.28, 0.17, 0.1, 0.05];
+const CURVE_BUCKET_WEIGHT = [0.7, 0.8, 0.9, 1, 1.2, 1.45, 1.75];
+function curveTargetFor(manaValue: number) {
+  if (manaValue < CURVE_TARGET.length) return CURVE_TARGET[manaValue];
+  // The former 3% 7+ allowance is distributed across exact high-MV buckets.
+  return 0.025 * 0.2 ** (manaValue - 7);
+}
+function curveWeightFor(manaValue: number) {
+  return (
+    CURVE_BUCKET_WEIGHT[manaValue] ??
+    CURVE_BUCKET_WEIGHT.at(-1)! + (manaValue - 6) * 0.35
+  );
+}
+function curveMinimumFor(manaValue: number) {
+  return manaValue >= 4 ? 1 : 0;
+}
 const FALLBACK_KEYWORDS = [
   'flying',
   'first strike',
@@ -88,10 +102,36 @@ function subtypesOf(card?: WorkspaceCard) {
         .map((type) => type.toLowerCase())
     : [];
 }
+function oracleTextForTagging(card?: WorkspaceCard) {
+  const text = card?.cardData?.oracleText.toLowerCase() ?? '';
+  // Token reminder text describes an ability of the created token, not an
+  // ability or cost of the card creating it. For example, a Food reminder's
+  // "Sacrifice this artifact" must not make Gingerbread Cabin sacrifice itself.
+  return text.replace(
+    /\([^)]*\bsacrifice this (?:artifact|creature|permanent|token)[^)]*\)/g,
+    '',
+  );
+}
+function cardHasOverload(card?: WorkspaceCard) {
+  const text = oracleTextForTagging(card);
+  return (
+    /\boverload\b/.test(text) ||
+    Boolean(
+      card?.cardData?.keywords?.some(
+        (keyword) => keyword.toLowerCase() === 'overload',
+      ),
+    )
+  );
+}
+function overloadAffects(card: WorkspaceCard, resource: string) {
+  if (!cardHasOverload(card)) return false;
+  const text = oracleTextForTagging(card);
+  return new RegExp(`\\btarget [^.]*\\b${resource}\\b`).test(text);
+}
 function synergyTags(card?: WorkspaceCard, knownTypes: string[] = []) {
   if (!card) return [];
   const tags = new Set<string>();
-  const text = card.cardData?.oracleText.toLowerCase() ?? '';
+  const text = oracleTextForTagging(card);
   (card.cardData?.keywords?.length
     ? card.cardData.keywords.filter(
         (keyword) => keyword.toLowerCase() !== 'double',
@@ -114,6 +154,17 @@ function synergyTags(card?: WorkspaceCard, knownTypes: string[] = []) {
     )
   )
     tags.add('mana ramp');
+  const producedColors = new Set(
+    (card.cardData?.producedMana ?? []).filter((mana) =>
+      ['W', 'U', 'B', 'R', 'G'].includes(mana),
+    ),
+  );
+  const explicitlyFixesColors =
+    /\badd (?:one|two|three|\{[^}]+\}) mana of any color\b|\badd one mana of any (?:color|type)\b|\badd mana in any combination of colors\b/.test(
+      text,
+    );
+  if (producedColors.size >= 2 || explicitlyFixesColors)
+    tags.add('color fixing');
   const investigates =
     /\binvestigate\b/.test(text) ||
     card.cardData?.keywords?.some(
@@ -137,36 +188,46 @@ function synergyTags(card?: WorkspaceCard, knownTypes: string[] = []) {
       ['double strike', 'trample'].includes(keyword.toLowerCase()),
     );
   if (improvesCombatDamage) tags.add('combat damage');
+  const overloadsArtifactEffect = overloadAffects(card, 'artifacts?');
+  const overloadsTreasureEffect = overloadAffects(card, 'treasures?');
+  const overloadsClueEffect = overloadAffects(card, 'clues?');
+  const overloadsTokenEffect = overloadAffects(card, 'tokens?');
+  const overloadsCreatureEffect = overloadAffects(card, 'creatures?');
   const countsArtifacts =
-    /\b(?:number of|for each) artifacts?\b|\b(?:you )?control (?:one|two|three|four|five|\d+) or more artifacts?\b|\baffinity for artifacts\b|\bmetalcraft\b/.test(
+    /\b(?:number of|for each) artifacts?\b|\bartifacts you control\b|\b(?:you )?control (?:one|two|three|four|five|\d+) or more artifacts?\b|\baffinity for artifacts\b|\bmetalcraft\b/.test(
       text,
     ) ||
     /\bimprovise\b/.test(text) ||
+    overloadsArtifactEffect ||
     card.cardData?.keywords?.some(
       (keyword) => keyword.toLowerCase() === 'improvise',
     );
   if (countsArtifacts || producesTreasure || producesClue)
     tags.add('artifact count');
   const countsTreasures =
-    /\b(?:number of|for each) treasures?\b|\b(?:you )?control (?:one|two|three|four|five|\d+) or more treasures?\b/.test(
+    /\b(?:number of|for each) treasures?\b|\btreasures you control\b|\b(?:you )?control (?:one|two|three|four|five|\d+) or more treasures?\b/.test(
       text,
     );
-  if (countsTreasures || producesTreasure) tags.add('treasure count');
+  if (countsTreasures || producesTreasure || overloadsTreasureEffect)
+    tags.add('treasure count');
   const countsClues =
-    /\b(?:number of|for each) clues?\b|\b(?:you )?control (?:one|two|three|four|five|\d+) or more clues?\b/.test(
+    /\b(?:number of|for each) clues?\b|\bclues you control\b|\b(?:you )?control (?:one|two|three|four|five|\d+) or more clues?\b/.test(
       text,
     );
-  if (countsClues || producesClue) tags.add('clue count');
+  if (countsClues || producesClue || overloadsClueEffect)
+    tags.add('clue count');
   const countsTokens =
-    /\b(?:number of|for each) tokens?\b|\b(?:you )?control (?:one|two|three|four|five|\d+) or more tokens?\b/.test(
+    /\b(?:number of|for each) tokens?\b|\btokens you control\b|\b(?:you )?control (?:one|two|three|four|five|\d+) or more tokens?\b/.test(
       text,
     );
-  if (countsTokens || producesToken) tags.add('token count');
+  if (countsTokens || producesToken || overloadsTokenEffect)
+    tags.add('token count');
   const countsCreatures =
-    /\b(?:number of|for each) creatures?\b|\b(?:you )?control (?:one|two|three|four|five|\d+) or more creatures?\b/.test(
+    /\b(?:number of|for each) creatures?\b|\bcreatures you control\b|\b(?:you )?control (?:one|two|three|four|five|\d+) or more creatures?\b/.test(
       text,
     );
-  if (countsCreatures || producesCreatureToken) tags.add('creature count');
+  if (countsCreatures || producesCreatureToken || overloadsCreatureEffect)
+    tags.add('creature count');
   const exilesFromTop =
     /\bexile [^.]*\btop\b [^.]*\bcards?\b [^.]*\blibrary\b/.test(text);
   const temporaryPermission =
@@ -186,6 +247,12 @@ function synergyTags(card?: WorkspaceCard, knownTypes: string[] = []) {
     /\bdestroy target|\bexile target|deals? \d+ damage to any target/.test(text)
   )
     tags.add('removal');
+  if (
+    /\bcounter (?:target|all|each|that) [^.]*\b(?:spells?|abilit(?:y|ies))\b|\bwhenever you counter\b|\bspells? (?:is|are|was|were) countered\b/.test(
+      text,
+    )
+  )
+    tags.add('counterspell');
   if (/\bdeals? (?:(?:\d+|x|that much) damage|damage equal to)\b/.test(text))
     tags.add('burn');
   if (/\bdiscards?\b|\bdiscard (?:a|one|two|three|\d+) cards?\b/.test(text))
@@ -205,7 +272,9 @@ function synergyTags(card?: WorkspaceCard, knownTypes: string[] = []) {
   const selfIsSacrificed = sacrificeSubjects.some(
     (subject) =>
       subject.includes(frontName) ||
-      /^(?:it|this permanent|this card)$/.test(subject),
+      /^(?:it|this permanent|this card|this creature|this artifact|this land|this token)$/.test(
+        subject,
+      ),
   );
   const frontTypes = (
     card.cardData?.typeLine?.split('//')[0].split('—')[0] ?? ''
@@ -364,9 +433,13 @@ function countSynergyProductionAmount(card: WorkspaceCard, tag: string) {
   );
 }
 function sacrificeAmounts(card: WorkspaceCard) {
-  const text = card.cardData?.oracleText.toLowerCase() ?? '';
+  const text = oracleTextForTagging(card);
   const amounts = new Map<string, number>();
   let total = 0;
+  const frontName = card.name.split('//')[0].trim().toLowerCase();
+  const frontTypes = (
+    card.cardData?.typeLine?.split('//')[0].split('—')[0] ?? ''
+  ).toLowerCase();
   const numberWords: Record<string, number> = {
     a: 1,
     an: 1,
@@ -382,9 +455,24 @@ function sacrificeAmounts(card: WorkspaceCard) {
     const prefix = text.slice(sentenceStart, match.index).trim();
     if (/\b(?:when|whenever|if)\b/.test(prefix)) continue;
     const subject = match[1];
-    const types = ['artifact', 'creature', 'land', 'token'].filter((type) =>
+    let types = ['artifact', 'creature', 'land', 'token'].filter((type) =>
       new RegExp(`\\b${type}s?\\b`).test(subject),
     );
+    if (
+      subject.includes(frontName) ||
+      /^(?:it|this permanent|this card|this creature|this artifact|this land|this token)$/.test(
+        subject,
+      )
+    ) {
+      types = [
+        ...new Set([
+          ...types,
+          ...['artifact', 'creature', 'land'].filter((type) =>
+            frontTypes.includes(type),
+          ),
+        ]),
+      ];
+    }
     const quantityMatch = subject.match(
       /\b(a|an|one|two|three|four|five|six|\d+)\b/,
     );
@@ -429,7 +517,7 @@ function hasRepeatableSynergy(card: WorkspaceCard, tag: string) {
   const isSacrificeTag =
     tag === 'sacrifice' ||
     /^type-event: (?:artifact|creature|land|token) sacrificed$/.test(tag);
-  const text = card.cardData?.oracleText.toLowerCase() ?? '';
+  const text = oracleTextForTagging(card);
   const specificSacrificeType = tag.match(
     /^type-event: (artifact|creature|land|token) sacrificed$/,
   )?.[1];
@@ -473,7 +561,7 @@ function hasRepeatableSynergy(card: WorkspaceCard, tag: string) {
         new RegExp(`\\b${countResource}\\b`).test(segment);
       const countsRelevantResource =
         new RegExp(
-          `\\b(?:number of|for each) ${countResource}\\b|\\bcontrol (?:one|two|three|four|five|\\d+) or more ${countResource}\\b`,
+          `\\b(?:number of|for each) ${countResource}\\b|\\b${countResource} you control\\b|\\bcontrol (?:one|two|three|four|five|\\d+) or more ${countResource}\\b`,
         ).test(segment);
       const namedMechanic =
         (tag === 'artifact count' &&
@@ -492,6 +580,8 @@ function hasRepeatableSynergy(card: WorkspaceCard, tag: string) {
         '+1/+1 counters': /\b\+1\/\+1 counters?\b/,
         recursion: /\bgraveyard\b[^.]*\b(?:hand|battlefield)\b|\breturn\b[^.]*\bgraveyard\b/,
         removal: /\bdestroy target\b|\bexile target\b|\bdamage to any target\b/,
+        counterspell:
+          /\bcounter (?:target|all|each|that) [^.]*\b(?:spells?|abilit(?:y|ies))\b|\bwhenever you counter\b|\bspells? (?:is|are|was|were) countered\b/,
         burn: /\bdeals?\b[^.]*\bdamage\b/,
         discard: /\bdiscards?\b/,
       };
@@ -520,11 +610,19 @@ function hasRepeatableSynergy(card: WorkspaceCard, tag: string) {
         segment,
       );
     const sacrificesSelf = new RegExp(
-      `\\bsacrifice (?:this (?:permanent|card|creature|artifact)|${escapedName})\\b`,
+      `\\bsacrifice (?:this (?:permanent|card|creature|artifact|land|token)|${escapedName})\\b`,
+    ).test(segment);
+    const discardsSelf = new RegExp(
+      `\\bdiscard (?:this card|${escapedName})\\b`,
+    ).test(segment);
+    const exilesSelf = new RegExp(
+      `\\bexile (?:this (?:permanent|card|creature|artifact|land|token)|${escapedName})\\b`,
     ).test(segment);
     const reusableActivation =
       segment.includes(':') &&
       !sacrificesSelf &&
+      !discardsSelf &&
+      !exilesSelf &&
       !/\bactivate only once\b/.test(segment);
     const continuousCountEffect =
       isCountTag &&
@@ -548,10 +646,25 @@ function hasRepeatableSynergy(card: WorkspaceCard, tag: string) {
     );
   });
 }
+function overloadMultiEffectAmount(card: WorkspaceCard, tag: string) {
+  if (!cardHasOverload(card)) return 0;
+  const text = oracleTextForTagging(card);
+  const affectedEffect: Record<string, RegExp> = {
+    removal: /\b(?:destroy|exile) target\b/,
+    burn: /\bdeals? [^.]* damage to target\b/,
+    counterspell: /\bcounter target\b/,
+    'creature theft': /\bgain control of target\b/,
+    '+1/+1 counters': /\bput [^.]*\+1\/\+1 counters? on target\b/,
+  };
+  // "Each" has an unbounded board-dependent size; three represents a useful
+  // multi-object baseline without allowing it to dominate the modifier scale.
+  return affectedEffect[tag]?.test(text) ? 3 : 0;
+}
 function tagModifier(card: WorkspaceCard, tag: string) {
   const countAmount = countSynergyProductionAmount(card, tag);
   const sacrificeAmount = sacrificeSynergyAmount(card, tag);
-  const amount = Math.max(countAmount, sacrificeAmount);
+  const overloadAmount = overloadMultiEffectAmount(card, tag);
+  const amount = Math.max(countAmount, sacrificeAmount, overloadAmount);
   const repeatable = hasRepeatableSynergy(card, tag);
   const quantityBonus =
     amount > 1 ? Math.min(1, (amount - 1) * 0.25) : 0;
@@ -570,6 +683,8 @@ function tagModifier(card: WorkspaceCard, tag: string) {
       ? 'enabler'
       : countAmount > 0
         ? 'producer'
+        : overloadAmount > 0
+          ? 'multi-target effect'
         : 'effect';
   return {
     amount,
@@ -580,6 +695,35 @@ function tagModifier(card: WorkspaceCard, tag: string) {
     repeatable,
     value: Math.min(3, 1 + modifierBonus),
   };
+}
+type SynergyRole = 'producer' | 'enabler' | 'payoff' | 'neutral';
+function synergyRole(card: WorkspaceCard, tag: string): SynergyRole {
+  if (
+    [
+      'artifact count',
+      'treasure count',
+      'clue count',
+      'token count',
+      'creature count',
+    ].includes(tag)
+  )
+    return countSynergyProductionAmount(card, tag) > 0
+      ? 'producer'
+      : 'payoff';
+  if (
+    tag === 'sacrifice' ||
+    /^type-event: (?:artifact|creature|land|token) sacrificed$/.test(tag)
+  )
+    return sacrificeSynergyAmount(card, tag) > 0 ? 'enabler' : 'payoff';
+  return 'neutral';
+}
+function rolesComplement(first: SynergyRole, second: SynergyRole) {
+  return (
+    (first === 'producer' && second === 'payoff') ||
+    (first === 'payoff' && second === 'producer') ||
+    (first === 'enabler' && second === 'payoff') ||
+    (first === 'payoff' && second === 'enabler')
+  );
 }
 function displayTag(tag: string) {
   if (tag.startsWith('type: '))
@@ -691,13 +835,18 @@ function HighlightedRulesText({
   );
 }
 function curveFor(cards: WorkspaceCard[]) {
-  const curve = Array.from({ length: 8 }, () => 0);
+  const highestManaValue = Math.max(
+    0,
+    ...cards
+      .filter((card) => card.cardData?.type !== 'Land')
+      .map((card) => Math.max(0, Math.floor(card.cardData?.manaValue ?? 0))),
+  );
+  const curve = Array.from({ length: highestManaValue + 1 }, () => 0);
   cards
     .filter((card) => card.cardData?.type !== 'Land')
     .forEach((card) => {
-      curve[
-        Math.min(7, Math.max(0, Math.floor(card.cardData?.manaValue ?? 0)))
-      ] += card.quantity;
+      curve[Math.max(0, Math.floor(card.cardData?.manaValue ?? 0))] +=
+        card.quantity;
     });
   return curve;
 }
@@ -710,16 +859,26 @@ function curvePenalty(curve: number[]) {
   const targetExcess = shares.reduce(
     (penalty, share, index) =>
       penalty +
-      Math.max(0, share - CURVE_TARGET[index]) * CURVE_BUCKET_WEIGHT[index],
+      Math.max(
+        0,
+        share -
+          Math.max(curveTargetFor(index), curveMinimumFor(index) / total),
+      ) *
+        curveWeightFor(index),
     0,
   );
   const crowdedTail = shares.slice(4).reduce((penalty, share, offset) => {
     const index = offset + 4;
-    const targetDrop = CURVE_TARGET[index] / CURVE_TARGET[index - 1];
-    const locallyExpected = shares[index - 1] * targetDrop;
+    // From MV 4 upward, the curve should not grow from one bucket to the
+    // next. The minimum allowance prevents an empty preceding bucket from
+    // demanding that every later bucket also be empty.
+    const locallyExpected = Math.max(
+      curveMinimumFor(index) / total,
+      shares[index - 1],
+    );
     return (
       penalty +
-      Math.max(0, share - locallyExpected) * CURVE_BUCKET_WEIGHT[index]
+      Math.max(0, share - locallyExpected) * curveWeightFor(index)
     );
   }, 0);
   return targetExcess + crowdedTail * 0.8;
@@ -766,6 +925,9 @@ export default function CutWorkspace({
   const [ignoredSynergies, setIgnoredSynergies] = useState<Set<string>>(
     new Set(),
   );
+  const [boostedSynergies, setBoostedSynergies] = useState<Set<string>>(
+    new Set(),
+  );
   const [focusedKey, setFocusedKey] = useState('');
   const [, setFlipRevision] = useState(0);
   const baseCurve = useMemo(() => curveFor(cards), [cards]);
@@ -774,9 +936,9 @@ export default function CutWorkspace({
     selectedCuts.forEach((key) => {
       const card = cards.find((entry) => keyOf(entry) === key);
       if (card && card.cardData?.type !== 'Land') {
-        const bucket = Math.min(
-          7,
-          Math.max(0, Math.floor(card.cardData?.manaValue ?? 0)),
+        const bucket = Math.max(
+          0,
+          Math.floor(card.cardData?.manaValue ?? 0),
         );
         curve[bucket] = Math.max(0, curve[bucket] - card.quantity);
       }
@@ -804,6 +966,42 @@ export default function CutWorkspace({
     () => [...new Set(cards.flatMap((card) => subtypesOf(card)))],
     [cards],
   );
+  const commanderSynergyTags = useMemo(
+    () =>
+      new Set(
+        synergyTags(
+          cards.find((card) => card.name === commander),
+          knownTypes,
+        ).filter((tag) => !ignoredSynergies.has(tag)),
+      ),
+    [cards, commander, knownTypes, ignoredSynergies],
+  );
+  const deckTopSynergyRanks = useMemo(() => {
+    const counts = new Map<string, number>();
+    cards
+      .filter(
+        (card) =>
+          card.name !== commander &&
+          !card.cardData?.typeLine?.startsWith('Basic Land'),
+      )
+      .forEach((card) =>
+        synergyTags(card, knownTypes)
+          .filter((tag) => !ignoredSynergies.has(tag))
+          .forEach((tag) =>
+            counts.set(tag, (counts.get(tag) ?? 0) + card.quantity),
+          ),
+      );
+    return new Map(
+      [...counts.entries()]
+        .sort(
+          ([firstTag, firstCount], [secondTag, secondCount]) =>
+            secondCount - firstCount ||
+            displayTag(firstTag).localeCompare(displayTag(secondTag)),
+        )
+        .slice(0, 3)
+        .map(([tag], index) => [tag, index + 1]),
+    );
+  }, [cards, commander, knownTypes, ignoredSynergies]);
   const recommendations = useMemo(() => {
     const eligible = cards.filter(
       (card) =>
@@ -818,21 +1016,67 @@ export default function CutWorkspace({
           frequency.set(tag, (frequency.get(tag) ?? 0) + card.quantity),
         ),
     );
-    const commanderTags = new Set(
-      synergyTags(
-        cards.find((card) => card.name === commander),
-        knownTypes,
-      ).filter((tag) => !ignoredSynergies.has(tag)),
+    const rolesByTag = new Map<string, Set<SynergyRole>>();
+    eligible.forEach((card) =>
+      synergyTags(card, knownTypes)
+        .filter((tag) => !ignoredSynergies.has(tag))
+        .forEach((tag) => {
+          const roles = rolesByTag.get(tag) ?? new Set<SynergyRole>();
+          roles.add(synergyRole(card, tag));
+          rolesByTag.set(tag, roles);
+        }),
     );
+    const commanderCard = cards.find((card) => card.name === commander);
+    const commanderTags = commanderSynergyTags;
     return eligible.map((card) => {
-      const bucket = Math.min(
-        7,
-        Math.max(0, Math.floor(card.cardData?.manaValue ?? 0)),
+      const bucket = Math.max(
+        0,
+        Math.floor(card.cardData?.manaValue ?? 0),
       );
       const beforeCurve = [...workingCurve];
       if (selectedCuts.has(keyOf(card)) && card.cardData?.type !== 'Land')
         beforeCurve[bucket] += card.quantity;
       const beforePenalty = curvePenalty(beforeCurve);
+      const beforeCurveTotal = beforeCurve.reduce(
+        (sum, count) => sum + count,
+        0,
+      );
+      const curveBucketCount = beforeCurve[bucket];
+      const targetShare = curveTargetFor(bucket);
+      const maximumCutsAboveMinimum = Math.max(
+        0,
+        curveBucketCount - curveMinimumFor(bucket),
+      );
+      const cutsForTargetShare = Math.min(
+        maximumCutsAboveMinimum,
+        Math.max(
+          0,
+          Math.ceil(
+            (curveBucketCount - targetShare * beforeCurveTotal) /
+              (1 - targetShare),
+          ),
+        ),
+      );
+      const cutsForTailShape =
+        bucket >= 4
+          ? Math.min(
+              maximumCutsAboveMinimum,
+              Math.max(
+                0,
+                Math.ceil(
+                  curveBucketCount -
+                    Math.max(
+                      curveMinimumFor(bucket),
+                      beforeCurve[bucket - 1],
+                    ),
+                ),
+              ),
+            )
+          : 0;
+      const cutsToCurveTarget = Math.min(
+        curveBucketCount,
+        Math.max(cutsForTargetShare, cutsForTailShape),
+      );
       const afterCurve = [...beforeCurve];
       if (card.cardData?.type !== 'Land')
         afterCurve[bucket] = Math.max(0, afterCurve[bucket] - card.quantity);
@@ -847,39 +1091,71 @@ export default function CutWorkspace({
       );
       const allTags = synergyTags(card, knownTypes);
       const tags = allTags.filter((tag) => !ignoredSynergies.has(tag));
-      const support = allTags.length
-        ? tags.reduce(
-            (sum, tag) =>
-              sum +
-              Math.min(
-                1,
-                ((frequency.get(tag) ?? 0) /
-                  Math.max(4, cardCount * 0.12)) *
-                  tagModifier(card, tag).value,
-              ),
-            0,
-          ) / allTags.length
-        : 0;
-      const commanderOverlap = allTags.length
-        ? tags.filter((tag) => commanderTags.has(tag)).length / allTags.length
-        : 0;
-      const allTypeTags = allTags.filter((tag) =>
-        tag.startsWith('type: '),
+      const supportByTag = new Map(
+        tags.map((tag) => [
+          tag,
+          Math.min(
+            1,
+            (Math.max(0, (frequency.get(tag) ?? 0) - card.quantity) /
+              Math.max(4, cardCount * 0.12)) *
+              tagModifier(card, tag).value,
+          ),
+        ]),
       );
-      const activeTypeTags = tags.filter((tag) =>
-        tag.startsWith('type: '),
+      const strongestSupportTags = [...supportByTag.entries()].sort(
+        ([firstTag, first], [secondTag, second]) =>
+          second - first ||
+          (frequency.get(secondTag) ?? 0) - (frequency.get(firstTag) ?? 0) ||
+          displayTag(firstTag).localeCompare(displayTag(secondTag)),
       );
-      const commanderTypeBoost = allTypeTags.length
-        ? activeTypeTags.filter((tag) => commanderTags.has(tag)).length /
-          allTypeTags.length
+      const strongestSupport = strongestSupportTags.map(([, score]) => score);
+      // A card's best deck connections should define its fit. Extra keywords such
+      // as ward, haste, reach, or trample are therefore neutral when unsupported.
+      const support = Math.min(
+        1,
+        (strongestSupport[0] ?? 0) +
+          (strongestSupport[1] ?? 0) * 0.2 +
+          (strongestSupport[2] ?? 0) * 0.1,
+      );
+      const complementarySupport = Math.max(
+        0,
+        ...tags.map((tag) => {
+          const cardRole = synergyRole(card, tag);
+          const complementaryRoleExists = [...(rolesByTag.get(tag) ?? [])].some(
+            (otherRole) => rolesComplement(cardRole, otherRole),
+          );
+          return complementaryRoleExists ? (supportByTag.get(tag) ?? 0) : 0;
+        }),
+      );
+      const sharedCommanderTags = tags.filter((tag) => commanderTags.has(tag));
+      const commanderHasComplement = commanderCard
+        ? sharedCommanderTags.some((tag) =>
+            rolesComplement(
+              synergyRole(card, tag),
+              synergyRole(commanderCard, tag),
+            ),
+          )
+        : false;
+      const commanderConnection = sharedCommanderTags.length
+        ? Math.min(
+            1,
+            0.65 +
+              Math.min(0.3, (sharedCommanderTags.length - 1) * 0.15) +
+              (commanderHasComplement ? 0.2 : 0),
+          )
         : 0;
+      const boostedTagCount = tags.filter((tag) =>
+        boostedSynergies.has(tag),
+      ).length;
+      const boostedTagBonus = Math.min(0.4, boostedTagCount * 0.2);
       const synergy =
         1 -
         Math.min(
           1,
-          support * 0.45 +
-            commanderOverlap * 0.3 +
-            commanderTypeBoost * 0.25,
+          support * 0.5 +
+            complementarySupport * 0.2 +
+            commanderConnection * 0.3 +
+            boostedTagBonus,
         );
       const cardValue = priceOf(card) * card.quantity;
       const priceIsActive = budget !== null;
@@ -898,6 +1174,29 @@ export default function CutWorkspace({
           : curve * 0.5 + synergy * 0.375 + popularity * 0.125,
         tags: allTags,
         activeTags: tags,
+        scoreBreakdown: {
+          beforeCurvePenalty: beforePenalty,
+          afterCurvePenalty: curvePenalty(afterCurve),
+          beforeCurveTotal,
+          curveBucketCount,
+          targetShare,
+          cutsToCurveTarget,
+          targetBucketCount: curveBucketCount - cutsToCurveTarget,
+          previousCurveBucketCount:
+            bucket >= 4 ? beforeCurve[bucket - 1] : null,
+          isLand: card.cardData?.type === 'Land',
+          support,
+          strongestSupportTags: strongestSupportTags
+            .slice(0, 3)
+            .map(([tag, score]) => ({ tag, score })),
+          complementarySupport,
+          commanderConnection,
+          boostedTagCount,
+          boostedTagBonus,
+          sharedCommanderTags: sharedCommanderTags.length,
+          cardValue,
+          edhrecRank: card.cardData?.edhrecRank,
+        },
         afterCurve,
         bucket,
       };
@@ -910,6 +1209,8 @@ export default function CutWorkspace({
     knownTypes,
     selectedCuts,
     ignoredSynergies,
+    commanderSynergyTags,
+    boostedSynergies,
     budget,
   ]);
   const allRanked = useMemo(
@@ -932,22 +1233,198 @@ export default function CutWorkspace({
     if (!groupByMana) return [['All cards', ranked] as const];
     const groups = new Map<number, typeof ranked>();
     ranked.forEach((item) => {
-      const bucket = Math.min(
-        7,
-        Math.max(0, Math.floor(item.card.cardData?.manaValue ?? 0)),
-      );
+      const bucket = item.bucket;
       groups.set(bucket, [...(groups.get(bucket) ?? []), item]);
     });
     return [...groups.entries()]
       .sort(([a], [b]) => a - b)
       .map(
         ([bucket, items]) =>
-          [`Mana value ${bucket === 7 ? '7+' : bucket}`, items] as const,
+          [`Mana value ${bucket}`, items] as const,
       );
   }, [ranked, groupByMana]);
   const focused =
     recommendations.find((item) => keyOf(item.card) === focusedKey) ??
     ranked[0];
+  const focusedScoreCards = focused
+    ? ([
+        {
+          value: 'curve',
+          label: 'Curve',
+          rows: focused.scoreBreakdown.isLand
+            ? [
+                { label: 'Card type', value: 'Land' },
+                { label: 'Curve effect', value: 'None' },
+              ]
+            : [
+                {
+                  label: 'Card mana value',
+                  value: `${focused.bucket}`,
+                },
+                {
+                  label: `Cards at MV ${focused.bucket}`,
+                  value: `${focused.scoreBreakdown.curveBucketCount}`,
+                },
+                ...(focused.bucket >= 4
+                  ? [
+                      {
+                        label: `Cards at MV ${focused.bucket - 1}`,
+                        value: `${focused.scoreBreakdown.previousCurveBucketCount}`,
+                      },
+                    ]
+                  : []),
+                {
+                  label: 'Ideal share of spells',
+                  value: `${Math.round(focused.scoreBreakdown.targetShare * 100)}%`,
+                },
+                {
+                  label: 'Estimated target count',
+                  value: `${focused.scoreBreakdown.targetBucketCount}`,
+                },
+                {
+                  label: 'Estimated cuts needed',
+                  value: `${focused.scoreBreakdown.cutsToCurveTarget}`,
+                },
+                {
+                  label: 'This cut improves curve',
+                  value: `${Math.round(focused.curve * 100)} / 100`,
+                },
+              ],
+          summary: focused.scoreBreakdown.isLand
+            ? 'Lands are not included in the mana-curve calculation.'
+            : `Removing this card reduces the MV ${focused.bucket} slot by ${focused.card.quantity}. From MV 4 upward, a bucket is also discouraged from exceeding the bucket immediately before it, while minimum allowances prevent the curve from being forced to zero.`,
+        },
+        {
+          value: 'synergy',
+          label: 'Low synergy',
+          rows: [
+            {
+              label: 'Deck support · 50%',
+              value: `${Math.round(focused.scoreBreakdown.support * 100)}`,
+            },
+            {
+              label: 'Producer/payoff · 20%',
+              value: `${Math.round(focused.scoreBreakdown.complementarySupport * 100)}`,
+            },
+            {
+              label: 'Commander link · 30%',
+              value: `${Math.round(focused.scoreBreakdown.commanderConnection * 100)}`,
+            },
+            {
+              label: 'Shared commander tags',
+              value: `${focused.scoreBreakdown.sharedCommanderTags}`,
+            },
+            {
+              label: `Boosted tags · ${focused.scoreBreakdown.boostedTagCount}`,
+              value: `+${Math.round(focused.scoreBreakdown.boostedTagBonus * 100)}`,
+            },
+            {
+              label: 'Low-synergy cut score',
+              value: `${Math.round(focused.synergy * 100)}`,
+            },
+          ],
+          summary:
+            'The three connection scores and any explicit tag boosts are combined, then inverted. Each boosted tag adds 20 points of preservation, up to 40.',
+        },
+        {
+          value: 'price',
+          label: 'Price',
+          rows: [
+            {
+              label: 'Card value',
+              value: `$${focused.scoreBreakdown.cardValue.toFixed(2)}`,
+            },
+            {
+              label: 'Deck budget',
+              value: budget === null ? 'Not set' : `$${budget.toFixed(2)}`,
+            },
+            {
+              label: 'Price cut score',
+              value: budget === null ? 'Excluded' : `${Math.round(focused.price * 100)}`,
+            },
+          ],
+          summary:
+            budget === null
+              ? 'Set a deck budget to include price in the overall score.'
+              : 'Card value is divided by the deck budget and capped at 100.',
+        },
+        {
+          value: 'popularity',
+          label: 'Low popularity',
+          rows: [
+            {
+              label: 'EDHREC rank',
+              value:
+                focused.scoreBreakdown.edhrecRank?.toLocaleString() ?? 'N/A',
+            },
+            {
+              label: 'Low-popularity cut score',
+              value: focused.scoreBreakdown.edhrecRank
+                ? `${Math.round(focused.popularity * 100)}`
+                : 'N/A',
+            },
+          ],
+          summary: focused.scoreBreakdown.edhrecRank
+            ? 'The EDHREC rank is scaled logarithmically against rank 25,000. Less-played cards receive a higher cut score.'
+            : 'No EDHREC rank is available, so popularity is displayed as N/A.',
+        },
+        {
+          value: 'all',
+          label: 'Overall',
+          rows: budget === null
+            ? [
+                {
+                  label: 'Curve · 50%',
+                  value: `${Math.round(focused.curve * 100)} → ${(focused.curve * 50).toFixed(1)}`,
+                },
+                {
+                  label: 'Low synergy · 37.5%',
+                  value: `${Math.round(focused.synergy * 100)} → ${(focused.synergy * 37.5).toFixed(1)}`,
+                },
+                {
+                  label: 'Low popularity · 12.5%',
+                  value: `${Math.round(focused.popularity * 100)} → ${(focused.popularity * 12.5).toFixed(1)}`,
+                },
+                {
+                  label: 'Overall cut score',
+                  value: `${Math.round(focused.all * 100)}`,
+                },
+              ]
+            : [
+                {
+                  label: 'Curve · 40%',
+                  value: `${Math.round(focused.curve * 100)} → ${(focused.curve * 40).toFixed(1)}`,
+                },
+                {
+                  label: 'Low synergy · 30%',
+                  value: `${Math.round(focused.synergy * 100)} → ${(focused.synergy * 30).toFixed(1)}`,
+                },
+                {
+                  label: 'Price · 20%',
+                  value: `${Math.round(focused.price * 100)} → ${(focused.price * 20).toFixed(1)}`,
+                },
+                {
+                  label: 'Low popularity · 10%',
+                  value: `${Math.round(focused.popularity * 100)} → ${(focused.popularity * 10).toFixed(1)}`,
+                },
+                {
+                  label: 'Overall cut score',
+                  value: `${Math.round(focused.all * 100)}`,
+                },
+              ],
+          summary:
+            'Each category score is multiplied by its weight. Those contributions are added to produce the overall cut score.',
+        },
+      ] as const)
+    : [];
+  const focusedConnectionTags = focused
+    ? [...focused.tags].sort(
+        (first, second) =>
+          (deckTopSynergyRanks.get(first) ?? Number.POSITIVE_INFINITY) -
+            (deckTopSynergyRanks.get(second) ?? Number.POSITIVE_INFINITY) ||
+          focused.tags.indexOf(first) - focused.tags.indexOf(second),
+      )
+    : [];
   const synergyMatches = useMemo(
     () =>
       focused
@@ -1042,15 +1519,23 @@ export default function CutWorkspace({
         tag,
         cards: matchingCards,
         count: matchingCards.reduce((sum, card) => sum + card.quantity, 0),
+        calculationCount: matchingCards
+          .filter(
+            (card) =>
+              card.name !== commander &&
+              !card.cardData?.typeLine?.startsWith('Basic Land'),
+          )
+          .reduce((sum, card) => sum + card.quantity, 0),
         ignored: ignoredSynergies.has(tag),
       }))
       .sort(
         (a, b) =>
           Number(a.ignored) - Number(b.ignored) ||
+          b.calculationCount - a.calculationCount ||
           b.count - a.count ||
           displayTag(a.tag).localeCompare(displayTag(b.tag)),
       );
-  }, [cards, knownTypes, ignoredSynergies]);
+  }, [cards, commander, knownTypes, ignoredSynergies]);
   const selectedSynergyGroup = discoveredSynergies.find(
     (group) => group.tag === selectedSynergy,
   );
@@ -1216,8 +1701,8 @@ export default function CutWorkspace({
         </section>
         {focused && (
           <section className="mb-7 rounded-2xl border border-lime-300/15 bg-[#101311] p-5">
-            <div className="grid gap-5 xl:grid-cols-[190px_minmax(300px,.8fr)_minmax(420px,1.2fr)]">
-              <div className="overflow-hidden rounded-xl border border-white/10 bg-black/20">
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-3 lg:items-stretch">
+              <div className="min-w-0 overflow-hidden rounded-xl border border-white/10 bg-black/20">
                 {focused.card.cardData?.imageUri ? (
                   <img
                     src={focused.card.cardData.imageUri}
@@ -1230,7 +1715,7 @@ export default function CutWorkspace({
                   </div>
                 )}
               </div>
-              <div>
+              <div className="flex min-w-0 flex-col lg:h-full lg:overflow-hidden">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-lime-300">
                   Interactive preview
                 </p>
@@ -1247,7 +1732,7 @@ export default function CutWorkspace({
                 <p className="mt-1 text-xs text-zinc-600">
                   {focused.card.cardData?.typeLine}
                 </p>
-                <div className="mt-3 max-h-36 overflow-y-auto rounded-xl border border-white/8 bg-black/20 p-3">
+                <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-xl border border-white/8 bg-black/20 p-3">
                   <div className="mb-2 flex items-center justify-between gap-3 border-b border-white/8 pb-2 text-[10px]">
                     <span className="font-medium uppercase tracking-wider text-zinc-600">
                       Mana cost
@@ -1261,32 +1746,78 @@ export default function CutWorkspace({
                     tags={focused.tags}
                   />
                 </div>
-                <div className="mt-4 grid grid-cols-2 gap-2">
-                  {(
-                    [
-                      ['all', 'Overall'],
-                      ['curve', 'Curve'],
-                      ['synergy', 'Low synergy'],
-                      ['price', 'Price'],
-                      ['popularity', 'Low popularity'],
-                    ] as const
-                  ).map(([value, label]) => (
-                    <div
+                <div className="hidden">
+                  {focusedScoreCards.map(({ value, label, rows, summary }) => (
+                    <button
                       key={value}
-                      className="rounded-xl border border-white/8 bg-black/20 p-3"
+                      type="button"
+                      aria-label={`${label} score calculation`}
+                      className={`group relative cursor-help rounded-xl border p-3 text-left transition-colors hover:border-lime-300/35 focus-visible:border-lime-300/50 focus-visible:outline-none ${
+                        value === 'all'
+                          ? 'col-span-2 border-lime-300/25 bg-gradient-to-r from-lime-300/10 via-lime-300/[0.04] to-lime-300/10'
+                          : 'border-white/8 bg-black/20'
+                      }`}
                     >
+                      <div
+                        className={`pointer-events-none absolute left-1/2 z-[100] hidden w-80 max-w-[min(20rem,calc(100vw-2rem))] -translate-x-1/2 rounded-xl border border-white/15 bg-zinc-950 p-3 text-left text-xs font-normal text-zinc-200 shadow-2xl group-hover:block group-focus-visible:block ${
+                          value === 'curve' || value === 'synergy'
+                            ? 'top-[calc(100%+0.5rem)]'
+                            : 'bottom-[calc(100%+0.5rem)]'
+                        }`}
+                      >
+                        <div className="mb-2 flex items-center justify-between border-b border-white/10 pb-2">
+                          <span className="font-semibold text-white">
+                            {label} calculation
+                          </span>
+                          <span className="font-mono text-lime-300">
+                            {value === 'popularity' &&
+                            !focused.card.cardData?.edhrecRank
+                              ? 'N/A'
+                              : Math.round(focused[value] * 100)}
+                          </span>
+                        </div>
+                        <div className="space-y-1.5">
+                          {rows.map((row) => (
+                            <div
+                              key={row.label}
+                              className="flex items-center justify-between gap-4 rounded-md bg-white/[0.045] px-2 py-1.5"
+                            >
+                              <span className="text-zinc-400">{row.label}</span>
+                              <span className="shrink-0 font-mono font-semibold text-white">
+                                {row.value}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                        <p className="mt-2 border-t border-white/10 pt-2 leading-relaxed text-zinc-400">
+                          {summary}
+                        </p>
+                        <span
+                          className={`absolute left-1/2 size-2 -translate-x-1/2 rotate-45 border-white/15 bg-zinc-950 ${
+                            value === 'curve' || value === 'synergy'
+                              ? 'bottom-full translate-y-1/2 border-l border-t'
+                              : 'top-full -translate-y-1/2 border-b border-r'
+                          }`}
+                        />
+                      </div>
                       <div className="flex items-end justify-between">
-                        <p className="font-mono text-xl font-semibold text-white">
+                        <p
+                          className={`font-mono font-semibold text-white ${value === 'all' ? 'text-2xl' : 'text-xl'}`}
+                        >
                           {value === 'popularity' &&
                           !focused.card.cardData?.edhrecRank
                             ? 'N/A'
                             : Math.round(focused[value] * 100)}
                         </p>
-                        <p className="text-[9px] text-zinc-600">{label}</p>
+                        <p
+                          className={`text-[9px] ${value === 'all' ? 'font-semibold uppercase tracking-widest text-lime-300' : 'text-zinc-600'}`}
+                        >
+                          {label}
+                        </p>
                       </div>
                       <div className="mt-2 h-1 overflow-hidden rounded-full bg-white/5">
                         <div
-                          className="h-full bg-lime-300"
+                          className={`h-full ${value === 'all' ? 'bg-lime-200' : 'bg-lime-300'}`}
                           style={{
                             width:
                               value === 'popularity' &&
@@ -1296,10 +1827,10 @@ export default function CutWorkspace({
                           }}
                         />
                       </div>
-                    </div>
+                    </button>
                   ))}
                 </div>
-                <div className="mt-4 grid grid-cols-2 gap-2">
+                <div className="hidden">
                   <Button
                     variant="ghost"
                     className="col-span-2"
@@ -1343,7 +1874,7 @@ export default function CutWorkspace({
                     )}
                   </Button>
                 </div>
-                <p className="mt-3 text-xs leading-5 text-zinc-500">
+                <p className="mt-3 shrink-0 text-xs leading-5 text-zinc-500 lg:max-h-24 lg:overflow-y-auto">
                   {focused.curve > 0
                     ? `Removing it improves the target curve by reducing the MV ${focused.bucket} bucket. `
                     : 'It does not materially improve the curve. '}
@@ -1358,8 +1889,8 @@ export default function CutWorkspace({
                     : ' No EDHREC rank is currently available.'}
                 </p>
               </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                <article className="rounded-xl border border-white/8 bg-black/20 p-4">
+              <div className="min-w-0 lg:h-full lg:overflow-hidden">
+                <article className="hidden">
                   <div className="flex items-center gap-2">
                     <BarChart3 className="size-4 text-lime-300" />
                     <h3 className="text-sm font-medium text-white">
@@ -1388,13 +1919,13 @@ export default function CutWorkspace({
                           />
                         </div>
                         <p className="mt-2 text-center font-mono text-[9px] text-zinc-600">
-                          {index === 7 ? '7+' : index}
+                          {index}
                         </p>
                       </div>
                     ))}
                   </div>
                 </article>
-                <article className="rounded-xl border border-white/8 bg-black/20 p-4">
+                <article className="flex h-full min-h-[360px] min-w-0 flex-col overflow-hidden rounded-xl border border-white/8 bg-black/20 p-4 lg:min-h-0">
                   <div className="flex items-center gap-2">
                     <Link2 className="size-4 text-lime-300" />
                     <h3 className="text-sm font-medium text-white">
@@ -1402,12 +1933,29 @@ export default function CutWorkspace({
                     </h3>
                   </div>
                   <div className="mt-3 flex max-h-16 flex-wrap gap-1 overflow-y-auto">
-                    {focused.tags.map((tag) => (
+                    {focusedConnectionTags.map((tag) => (
                       <Badge
                         key={tag}
                         variant="outline"
                         className="border-lime-300/20 text-[9px] text-lime-200"
                       >
+                        {deckTopSynergyRanks.has(tag) && (
+                          <span className="mr-1 font-mono font-bold text-lime-300">
+                            #{deckTopSynergyRanks.get(tag)}
+                          </span>
+                        )}
+                        {commanderSynergyTags.has(tag) && (
+                          <Crown
+                            className="mr-1 inline size-2.5 text-lime-300"
+                            aria-label="Shared with commander"
+                          />
+                        )}
+                        {boostedSynergies.has(tag) && (
+                          <Sparkles
+                            className="mr-1 inline size-2.5 text-amber-300"
+                            aria-label="Boosted synergy"
+                          />
+                        )}
                         <SynergyTagLabel
                           card={focused.card}
                           tag={tag}
@@ -1418,7 +1966,7 @@ export default function CutWorkspace({
                       </Badge>
                     ))}
                   </div>
-                  <div className="mt-3 max-h-44 space-y-1.5 overflow-y-auto">
+                  <div className="mt-3 min-h-0 flex-1 space-y-1.5 overflow-y-auto">
                     {synergyMatches.map((match) => (
                       <button
                         type="button"
@@ -1447,6 +1995,163 @@ export default function CutWorkspace({
                     )}
                   </div>
                 </article>
+              </div>
+            </div>
+            <div className="mt-5 grid gap-4 border-t border-white/8 pt-5 lg:grid-cols-[180px_minmax(0,1fr)_220px] lg:items-stretch">
+              <article className="rounded-xl border border-white/8 bg-black/20 p-3">
+                <div className="flex items-center gap-2">
+                  <BarChart3 className="size-4 text-lime-300" />
+                  <h3 className="text-sm font-medium text-white">
+                    Curve after this cut
+                  </h3>
+                </div>
+                <p className="mt-1 text-[9px] leading-4 text-zinc-600">
+                  Gray: current. Green: after cut.
+                </p>
+                <div className="mt-3 flex h-24 items-end gap-1 overflow-hidden">
+                  {baseCurve.map((before, index) => (
+                    <div
+                      key={index}
+                      className="flex h-full min-w-0 flex-1 flex-col justify-end"
+                    >
+                      <div className="flex h-16 items-end justify-center gap-px">
+                        <div
+                          className="w-1/2 rounded-t bg-zinc-700"
+                          style={{ height: `${(before / maxCurve) * 100}%` }}
+                        />
+                        <div
+                          className="w-1/2 rounded-t bg-lime-300"
+                          style={{
+                            height: `${(focused.afterCurve[index] / maxCurve) * 100}%`,
+                          }}
+                        />
+                      </div>
+                      <p className="mt-2 text-center font-mono text-[9px] text-zinc-600">
+                        {index}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </article>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {focusedScoreCards.map(({ value, label, rows, summary }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-label={`${label} score calculation`}
+                    className={`group relative cursor-help rounded-xl border p-3 text-left transition-colors hover:border-lime-300/35 focus-visible:border-lime-300/50 focus-visible:outline-none ${value === 'all' ? 'col-span-2 border-lime-300/25 bg-gradient-to-r from-lime-300/10 via-lime-300/[0.04] to-lime-300/10 sm:col-span-4' : 'border-white/8 bg-black/20'}`}
+                  >
+                    <div className="pointer-events-none absolute bottom-[calc(100%+0.5rem)] left-1/2 z-[100] hidden w-80 max-w-[min(20rem,calc(100vw-2rem))] -translate-x-1/2 rounded-xl border border-white/15 bg-zinc-950 p-3 text-left text-xs font-normal text-zinc-200 shadow-2xl group-hover:block group-focus-visible:block">
+                      <div className="mb-2 flex items-center justify-between border-b border-white/10 pb-2">
+                        <span className="font-semibold text-white">
+                          {label} calculation
+                        </span>
+                        <span className="font-mono text-lime-300">
+                          {value === 'popularity' &&
+                          !focused.card.cardData?.edhrecRank
+                            ? 'N/A'
+                            : Math.round(focused[value] * 100)}
+                        </span>
+                      </div>
+                      <div className="space-y-1.5">
+                        {rows.map((row) => (
+                          <div
+                            key={row.label}
+                            className="flex items-center justify-between gap-4 rounded-md bg-white/[0.045] px-2 py-1.5"
+                          >
+                            <span className="text-zinc-400">{row.label}</span>
+                            <span className="shrink-0 font-mono font-semibold text-white">
+                              {row.value}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="mt-2 border-t border-white/10 pt-2 leading-relaxed text-zinc-400">
+                        {summary}
+                      </p>
+                    </div>
+                    <div className="flex items-end justify-between">
+                      <p
+                        className={`font-mono font-semibold text-white ${value === 'all' ? 'text-2xl' : 'text-xl'}`}
+                      >
+                        {value === 'popularity' &&
+                        !focused.card.cardData?.edhrecRank
+                          ? 'N/A'
+                          : Math.round(focused[value] * 100)}
+                      </p>
+                      <p
+                        className={`text-[9px] ${value === 'all' ? 'font-semibold uppercase tracking-widest text-lime-300' : 'text-zinc-600'}`}
+                      >
+                        {label}
+                      </p>
+                    </div>
+                    <div className="mt-2 h-1 overflow-hidden rounded-full bg-white/5">
+                      <div
+                        className={`h-full ${value === 'all' ? 'bg-lime-200' : 'bg-lime-300'}`}
+                        style={{
+                          width:
+                            value === 'popularity' &&
+                            !focused.card.cardData?.edhrecRank
+                              ? '0%'
+                              : `${focused[value] * 100}%`,
+                        }}
+                      />
+                    </div>
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-col justify-between rounded-xl border border-white/8 bg-black/20 p-3">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">
+                    Decision
+                  </p>
+                  <p className="mt-1 text-xs font-medium text-zinc-300">
+                    Choose what happens to this card.
+                  </p>
+                </div>
+                <div className="mt-3 grid gap-1.5">
+                  <Button
+                    variant="ghost"
+                    disabled={
+                      !selectedCuts.has(keyOf(focused.card)) &&
+                      !keptCards.has(keyOf(focused.card))
+                    }
+                    onClick={() => resetDecision(focused.card)}
+                  >
+                    Undecided
+                  </Button>
+                  <Button
+                    variant={
+                      keptCards.has(keyOf(focused.card))
+                        ? 'secondary'
+                        : 'outline'
+                    }
+                    onClick={() => markKeep(focused.card)}
+                  >
+                    {keptCards.has(keyOf(focused.card)) && (
+                      <Check data-icon="inline-start" />
+                    )}{' '}
+                    Keep
+                  </Button>
+                  <Button
+                    variant={
+                      selectedCuts.has(keyOf(focused.card))
+                        ? 'secondary'
+                        : 'default'
+                    }
+                    onClick={() => toggleCut(focused.card)}
+                  >
+                    {selectedCuts.has(keyOf(focused.card)) ? (
+                      <>
+                        <Check data-icon="inline-start" /> Cut
+                      </>
+                    ) : (
+                      <>
+                        <Scissors data-icon="inline-start" /> Add to cuts
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
             </div>
           </section>
@@ -1640,7 +2345,7 @@ export default function CutWorkspace({
                   />
                 </div>
                 <p className="mt-2 text-center font-mono text-[10px] text-zinc-600">
-                  {index === 7 ? '7+' : index}
+                  {index}
                 </p>
               </div>
             ))}
@@ -1653,7 +2358,8 @@ export default function CutWorkspace({
                 Synergies browser
               </h2>
               <p className="mt-1 text-xs text-zinc-600">
-                Every discovered keyword, ability, and creature-type connection.
+                Ranked by deck-wide support, followed by every other discovered
+                connection.
               </p>
             </div>
             <Badge variant="outline" className="border-white/10 text-zinc-500">
@@ -1662,23 +2368,64 @@ export default function CutWorkspace({
           </div>
           <div className="mt-4 flex max-h-52 flex-wrap content-start gap-2 overflow-y-auto pr-1">
             {discoveredSynergies.map((group) => (
-              <button
-                type="button"
+              <div
                 key={group.tag}
-                onClick={() => setSelectedSynergy(group.tag)}
-                className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-left ${group.ignored ? 'border-red-300/25 bg-red-300/10 hover:border-red-300/45 hover:bg-red-300/15' : 'border-white/8 bg-black/20 hover:border-lime-300/30 hover:bg-lime-300/[0.05]'}`}
+                className={`flex overflow-hidden rounded-xl border ${group.ignored ? 'border-red-300/25 bg-red-300/10' : boostedSynergies.has(group.tag) ? 'border-lime-300/50 bg-lime-300/10' : 'border-white/8 bg-black/20'}`}
               >
-                <span
-                  className={`text-xs ${group.ignored ? 'text-red-200' : 'text-zinc-300'}`}
+                <button
+                  type="button"
+                  onClick={() => setSelectedSynergy(group.tag)}
+                  className="flex items-center gap-2 px-3 py-2 text-left hover:bg-white/[0.035]"
                 >
-                  {displayTag(group.tag)}
-                </span>
-                <span
-                  className={`grid min-w-6 place-items-center rounded-full px-1.5 py-0.5 font-mono text-[10px] ${group.ignored ? 'bg-red-300/15 text-red-200' : 'bg-lime-300/10 text-lime-300'}`}
-                >
-                  {group.count}
-                </span>
-              </button>
+                  {!group.ignored && deckTopSynergyRanks.has(group.tag) && (
+                    <span className="rounded-md bg-lime-300 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-zinc-950">
+                      {deckTopSynergyRanks.get(group.tag) === 1
+                        ? 'Top Synergy'
+                        : deckTopSynergyRanks.get(group.tag) === 2
+                          ? '2nd Top Synergy'
+                          : '3rd Top Synergy'}
+                    </span>
+                  )}
+                  {!group.ignored && commanderSynergyTags.has(group.tag) && (
+                    <Crown
+                      className="size-3.5 shrink-0 text-lime-300"
+                      aria-label="Commander synergy"
+                    />
+                  )}
+                  <span
+                    className={`text-xs ${group.ignored ? 'text-red-200' : 'text-zinc-300'}`}
+                  >
+                    {displayTag(group.tag)}
+                  </span>
+                  <span
+                    className={`grid min-w-6 place-items-center rounded-full px-1.5 py-0.5 font-mono text-[10px] ${group.ignored ? 'bg-red-300/15 text-red-200' : 'bg-lime-300/10 text-lime-300'}`}
+                  >
+                    {group.count}
+                  </span>
+                </button>
+                {!group.ignored && (
+                  <button
+                    type="button"
+                    aria-label={`${boostedSynergies.has(group.tag) ? 'Remove boost from' : 'Boost'} ${displayTag(group.tag)}`}
+                    title={
+                      boostedSynergies.has(group.tag)
+                        ? 'Remove synergy boost'
+                        : 'Preserve this synergy'
+                    }
+                    onClick={() =>
+                      setBoostedSynergies((current) => {
+                        const next = new Set(current);
+                        if (next.has(group.tag)) next.delete(group.tag);
+                        else next.add(group.tag);
+                        return next;
+                      })
+                    }
+                    className={`grid w-9 place-items-center border-l transition-colors ${boostedSynergies.has(group.tag) ? 'border-lime-300/30 bg-lime-300/20 text-lime-200' : 'border-white/8 text-zinc-600 hover:bg-lime-300/10 hover:text-lime-300'}`}
+                  >
+                    <Sparkles className="size-3.5" />
+                  </button>
+                )}
+              </div>
             ))}
           </div>
         </section>
@@ -1811,6 +2558,30 @@ export default function CutWorkspace({
               <div className="flex shrink-0 items-center gap-2 self-end sm:self-start">
                 <Button
                   className={
+                    boostedSynergies.has(selectedSynergyGroup.tag)
+                      ? 'border-amber-300/40 bg-amber-300/15 text-amber-200 hover:bg-amber-300/20'
+                      : ''
+                  }
+                  variant="outline"
+                  size="sm"
+                  disabled={selectedSynergyGroup.ignored}
+                  onClick={() =>
+                    setBoostedSynergies((current) => {
+                      const next = new Set(current);
+                      if (next.has(selectedSynergyGroup.tag))
+                        next.delete(selectedSynergyGroup.tag);
+                      else next.add(selectedSynergyGroup.tag);
+                      return next;
+                    })
+                  }
+                >
+                  <Sparkles data-icon="inline-start" />
+                  {boostedSynergies.has(selectedSynergyGroup.tag)
+                    ? 'Remove boost'
+                    : 'Boost synergy'}
+                </Button>
+                <Button
+                  className={
                     selectedSynergyGroup.ignored
                       ? 'bg-red-400 text-red-950 hover:bg-red-300'
                       : ''
@@ -1819,15 +2590,21 @@ export default function CutWorkspace({
                     selectedSynergyGroup.ignored ? 'default' : 'outline'
                   }
                   size="sm"
-                  onClick={() =>
+                  onClick={() => {
+                    if (!selectedSynergyGroup.ignored)
+                      setBoostedSynergies((boosted) => {
+                        const withoutIgnored = new Set(boosted);
+                        withoutIgnored.delete(selectedSynergyGroup.tag);
+                        return withoutIgnored;
+                      });
                     setIgnoredSynergies((current) => {
                       const next = new Set(current);
                       if (next.has(selectedSynergyGroup.tag))
                         next.delete(selectedSynergyGroup.tag);
                       else next.add(selectedSynergyGroup.tag);
                       return next;
-                    })
-                  }
+                    });
+                  }}
                 >
                   {selectedSynergyGroup.ignored
                     ? 'Restore synergy tag'
