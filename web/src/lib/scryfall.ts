@@ -113,6 +113,10 @@ export async function loadBundledCatalog() {
   const catalog = new Map<string, CachedCardData>();
   cards.forEach((card) => {
     if (!card.cacheKey) return;
+    // A name-only lookup requests a normal paper printing. Older catalogs could
+    // incorrectly label foil-only promos as "cheap" because null USD prices
+    // were treated as zero by the catalog generator.
+    if (card.cacheKey.startsWith('cheap:') && !card.priceUsd) return;
     const normalized = {
       ...card,
       type: primaryType(card.typeLine ?? card.type),

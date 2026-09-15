@@ -68,6 +68,33 @@ body {
 button, select, textarea, input { font: inherit; }
 ::selection { background: rgba(190, 242, 100, 0.24); color: white; }
 
+.foil-card-effect {
+  opacity: 0.48;
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgba(255, 70, 120, 0.18) 0%,
+    rgba(255, 205, 80, 0.2) 12%,
+    rgba(120, 255, 180, 0.18) 25%,
+    rgba(90, 205, 255, 0.2) 38%,
+    rgba(170, 115, 255, 0.2) 50%,
+    rgba(255, 70, 120, 0.18) 62.5%
+  );
+  background-position: 0 0;
+  background-size: 220% 220%;
+  background-blend-mode: color-dodge;
+  mix-blend-mode: screen;
+  animation: foil-rainbow-drift 3.6s linear infinite;
+}
+
+@keyframes foil-rainbow-drift {
+  from { background-position: 0 0; }
+  to { background-position: 100% 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .foil-card-effect { animation: none; }
+}
+
 /* The cut triage browser is a bounded window; the aggregate preview follows it. */
 main > div > section.mb-7 + section > div.grid {
   max-height: 360px;

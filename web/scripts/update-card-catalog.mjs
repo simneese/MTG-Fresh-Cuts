@@ -72,7 +72,9 @@ function normalizeCard(card, requestedName = card.name) {
 }
 
 function normalPrice(card) {
-  const price = Number(card.prices?.usd);
+  const rawPrice = card.prices?.usd;
+  if (rawPrice == null || rawPrice === '') return Number.POSITIVE_INFINITY;
+  const price = Number(rawPrice);
   return Number.isFinite(price) ? price : Number.POSITIVE_INFINITY;
 }
 
@@ -154,12 +156,6 @@ const basicLands = oracleCards.filter(({ representative }) =>
   representative.type_line.startsWith('Basic Land'),
 );
 
-let existing = [];
-try {
-  existing = JSON.parse(await readFile(catalogPath, 'utf8'));
-} catch {
-  existing = [];
-}
 let seedNames = [];
 try {
   seedNames = (await readFile(seedPath, 'utf8')).split(/\r?\n/);
@@ -188,9 +184,9 @@ for (const entry of [
   selectedByOracleId.set(entry.representative.oracle_id, entry);
 }
 
-const catalog = new Map(
-  existing.map((card) => [card.cacheKey ?? `cheap:${card.nameKey}`, card]),
-);
+// Rebuild from the current bulk dataset instead of retaining stale printings
+// from previous catalogs.
+const catalog = new Map();
 for (const { representative } of selectedByOracleId.values()) {
   const normalized = normalizeCard(representative);
   catalog.set(normalized.cacheKey, normalized);

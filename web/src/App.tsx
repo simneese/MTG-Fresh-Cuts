@@ -37,6 +37,7 @@ import {
   type CardLookup,
 } from '@/lib/scryfall';
 import DeckWorkspace from '@/DeckWorkspace';
+import FoilIndicator from '@/components/FoilIndicator';
 
 type Format = 'commander' | 'standard' | 'modern' | 'custom';
 type CardType =
@@ -312,10 +313,18 @@ export default function Home() {
             .trim()
             .toLowerCase()}`,
         );
+      const cachedDataFor = (card: ParsedCard) => {
+        const data = cached.get(card.key);
+        // Discard legacy name-only cache entries that point at foil-only
+        // printings; an unspecified finish means a normal printing.
+        return card.key.startsWith('cheap:') && data && !data.priceUsd
+          ? undefined
+          : data;
+      };
       const now = Date.now();
       const freshNames = new Set<string>();
       result.cards.forEach((card) => {
-        const cachedCard = cached.get(card.key);
+        const cachedCard = cachedDataFor(card);
         const bundledRank = bundledDataFor(card)?.edhrecRank;
         if (
           cachedCard &&
@@ -335,7 +344,7 @@ export default function Home() {
       const withCachedData = result.cards.map((card) => ({
         ...card,
         cardData: (() => {
-          const cachedData = cached.get(card.key);
+          const cachedData = cachedDataFor(card);
           const directBundledData = bundled.get(card.key);
           const rankSource = bundledDataFor(card);
           const data = cachedData ?? directBundledData;
@@ -406,12 +415,13 @@ export default function Home() {
   if (screen === 'deck')
     return (
       <DeckWorkspace
-        deckName={deckName.trim()}
+        deckName={deckName || 'Unnamed'}
         formatLabel={FORMAT_RULES[format].label}
         commander={commander}
         cards={cards}
         cardCount={cardCount}
         target={target}
+        onDeckNameChange={setDeckName}
         onBack={() => setScreen('import')}
       />
     );
@@ -571,7 +581,7 @@ export default function Home() {
                   </p>
                   <div className="flex flex-wrap items-center gap-3">
                     <h2 className="font-heading text-3xl font-semibold tracking-[-0.04em] text-white">
-                      Untitled deck
+                      {deckName.trim() || 'Unnamed'}
                     </h2>
                     <Badge
                       variant="outline"
@@ -657,17 +667,19 @@ export default function Home() {
                     className="h-10 w-full rounded-lg border border-white/10 bg-[#090b0a] px-3 text-sm text-zinc-200 outline-none placeholder:text-zinc-700 focus:border-lime-300/40 focus:ring-3 focus:ring-lime-300/10"
                     value={deckName}
                     onChange={(event) => setDeckName(event.target.value)}
-                    placeholder="Name this deck"
+                    placeholder="Optional — defaults to Unnamed"
                   />
                 </label>
                 <Button
                   className="h-10 bg-lime-300 text-[#11150d] hover:bg-lime-200"
                   disabled={
-                    !deckName.trim() ||
                     isLoadingCards ||
                     (format === 'commander' && !commander)
                   }
-                  onClick={() => setScreen('deck')}
+                  onClick={() => {
+                    if (!deckName.trim()) setDeckName('Unnamed');
+                    setScreen('deck');
+                  }}
                 >
                   Open deck view <ChevronRight data-icon="inline-end" />
                 </Button>
@@ -741,6 +753,7 @@ export default function Home() {
                         <div className="min-w-0 pr-3">
                           <p className="truncate text-sm font-medium text-zinc-200 group-hover:text-white">
                             {card.name}
+                            <FoilIndicator cacheKey={details?.cacheKey} />
                             {commander === card.name && (
                               <Crown
                                 className="ml-2 inline size-3.5 text-lime-300"

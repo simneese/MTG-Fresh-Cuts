@@ -12,6 +12,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import FoilIndicator from '@/components/FoilIndicator';
 import type { WorkspaceCard } from '@/DeckWorkspace';
 type Criterion = 'all' | 'curve' | 'synergy' | 'price' | 'popularity';
 type Props = {
@@ -71,6 +72,16 @@ const FALLBACK_KEYWORDS = [
   'investigate',
   'discover',
 ];
+const NAMED_TOKEN_TYPES = [
+  'clue',
+  'food',
+  'treasure',
+  'blood',
+  'map',
+  'gold',
+  'powerstone',
+  'incubator',
+] as const;
 function keyOf(card: WorkspaceCard) {
   return card.key ?? card.name;
 }
@@ -154,6 +165,17 @@ function synergyTags(card?: WorkspaceCard, knownTypes: string[] = []) {
     )
   )
     tags.add('mana ramp');
+  if (
+    /\bcosts? [^.]* less to cast\b|\bspells? [^.]* cost [^.]* less\b|\breduce [^.]* cost\b|\brather than pay [^.]* mana cost\b|\bwithout paying (?:its|their|the) mana cost\b|\b(?:affinity|convoke|delve|improvise)\b/.test(
+      text,
+    ) ||
+    card.cardData?.keywords?.some((keyword) =>
+      ['affinity', 'convoke', 'delve', 'improvise'].some((mechanic) =>
+        keyword.toLowerCase().startsWith(mechanic),
+      ),
+    )
+  )
+    tags.add('cost reduction');
   const producedColors = new Set(
     (card.cardData?.producedMana ?? []).filter((mana) =>
       ['W', 'U', 'B', 'R', 'G'].includes(mana),
@@ -178,6 +200,7 @@ function synergyTags(card?: WorkspaceCard, knownTypes: string[] = []) {
     /\bcreates? [^.]*\bcreatures? tokens?\b/.test(text);
   const producesTreasure =
     /\bcreates? [^.]*\btreasure|\btreasure tokens?\b/.test(text);
+  const producesFood = /\bcreates? [^.]*\bfood|\bfood tokens?\b/.test(text);
   if (/\bgain control of [^.]*\bcreatures?\b/.test(text))
     tags.add('creature theft');
   const improvesCombatDamage =
@@ -191,6 +214,7 @@ function synergyTags(card?: WorkspaceCard, knownTypes: string[] = []) {
   const overloadsArtifactEffect = overloadAffects(card, 'artifacts?');
   const overloadsTreasureEffect = overloadAffects(card, 'treasures?');
   const overloadsClueEffect = overloadAffects(card, 'clues?');
+  const overloadsFoodEffect = overloadAffects(card, 'food');
   const overloadsTokenEffect = overloadAffects(card, 'tokens?');
   const overloadsCreatureEffect = overloadAffects(card, 'creatures?');
   const countsArtifacts =
@@ -202,7 +226,7 @@ function synergyTags(card?: WorkspaceCard, knownTypes: string[] = []) {
     card.cardData?.keywords?.some(
       (keyword) => keyword.toLowerCase() === 'improvise',
     );
-  if (countsArtifacts || producesTreasure || producesClue)
+  if (countsArtifacts || producesTreasure || producesClue || producesFood)
     tags.add('artifact count');
   const countsTreasures =
     /\b(?:number of|for each) treasures?\b|\btreasures you control\b|\b(?:you )?control (?:one|two|three|four|five|\d+) or more treasures?\b/.test(
@@ -216,6 +240,12 @@ function synergyTags(card?: WorkspaceCard, knownTypes: string[] = []) {
     );
   if (countsClues || producesClue || overloadsClueEffect)
     tags.add('clue count');
+  const countsFood =
+    /\b(?:number of|for each) food\b|\bfood you control\b|\b(?:you )?control (?:one|two|three|four|five|\d+) or more food\b/.test(
+      text,
+    );
+  if (countsFood || producesFood || overloadsFoodEffect)
+    tags.add('food count');
   const countsTokens =
     /\b(?:number of|for each) tokens?\b|\btokens you control\b|\b(?:you )?control (?:one|two|three|four|five|\d+) or more tokens?\b/.test(
       text,
@@ -360,6 +390,16 @@ function synergyTags(card?: WorkspaceCard, knownTypes: string[] = []) {
     /\btokens? (?:is|are|was|were|you control is) sacrificed\b/.test(text)
   )
     addTypeEvent('token', 'sacrificed');
+  NAMED_TOKEN_TYPES.forEach((type) => {
+    if (
+      sacrificeReferences(type) ||
+      (selfIsSacrificed && subtypesOf(card).includes(type)) ||
+      new RegExp(
+        `\\b${type}s? (?:is|are|was|were|you control is) sacrificed\\b`,
+      ).test(text)
+    )
+      addTypeEvent(type, 'sacrificed');
+  });
   subtypesOf(card).forEach((type) => tags.add(`type: ${type}`));
   knownTypes.forEach((type) => {
     const escaped = type.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -421,10 +461,14 @@ function countSynergyProductionAmount(card: WorkspaceCard, tag: string) {
   return (
     tag === 'artifact count' || tag === 'treasure count'
       ? tag === 'artifact count'
-        ? createdTokenAmount(card, 'treasures?') + clueProductionAmount(card)
+        ? createdTokenAmount(card, 'treasures?') +
+          clueProductionAmount(card) +
+          createdTokenAmount(card, 'food')
         : createdTokenAmount(card, 'treasures?')
       : tag === 'clue count'
         ? clueProductionAmount(card)
+      : tag === 'food count'
+        ? createdTokenAmount(card, 'food')
       : tag === 'creature count'
         ? createdTokenAmount(card, 'creatures?')
         : tag === 'token count'
@@ -455,9 +499,13 @@ function sacrificeAmounts(card: WorkspaceCard) {
     const prefix = text.slice(sentenceStart, match.index).trim();
     if (/\b(?:when|whenever|if)\b/.test(prefix)) continue;
     const subject = match[1];
-    let types = ['artifact', 'creature', 'land', 'token'].filter((type) =>
-      new RegExp(`\\b${type}s?\\b`).test(subject),
-    );
+    let types = [
+      'artifact',
+      'creature',
+      'land',
+      'token',
+      ...NAMED_TOKEN_TYPES,
+    ].filter((type) => new RegExp(`\\b${type}s?\\b`).test(subject));
     if (
       subject.includes(frontName) ||
       /^(?:it|this permanent|this card|this creature|this artifact|this land|this token)$/.test(
@@ -469,6 +517,9 @@ function sacrificeAmounts(card: WorkspaceCard) {
           ...types,
           ...['artifact', 'creature', 'land'].filter((type) =>
             frontTypes.includes(type),
+          ),
+          ...NAMED_TOKEN_TYPES.filter((type) =>
+            subtypesOf(card).includes(type),
           ),
         ]),
       ];
@@ -503,51 +554,50 @@ function sacrificeAmounts(card: WorkspaceCard) {
 function sacrificeSynergyAmount(card: WorkspaceCard, tag: string) {
   const { amounts, total } = sacrificeAmounts(card);
   if (tag === 'sacrifice') return total;
-  const match = tag.match(/^type-event: (artifact|creature|land|token) sacrificed$/);
+  const match = tag.match(
+    /^type-event: (artifact|creature|land|token|clue|food|treasure|blood|map|gold|powerstone|incubator) sacrificed$/,
+  );
   return match ? (amounts.get(match[1]) ?? 0) : 0;
 }
-function hasRepeatableSynergy(card: WorkspaceCard, tag: string) {
+function repeatabilityForSynergy(card: WorkspaceCard, tag: string) {
   const isCountTag = [
     'artifact count',
     'treasure count',
     'clue count',
+    'food count',
     'token count',
     'creature count',
   ].includes(tag);
   const isSacrificeTag =
     tag === 'sacrifice' ||
-    /^type-event: (?:artifact|creature|land|token) sacrificed$/.test(tag);
+    /^type-event: (?:artifact|creature|land|token|clue|food|treasure|blood|map|gold|powerstone|incubator) sacrificed$/.test(
+      tag,
+    );
   const text = oracleTextForTagging(card);
   const specificSacrificeType = tag.match(
-    /^type-event: (artifact|creature|land|token) sacrificed$/,
+    /^type-event: (artifact|creature|land|token|clue|food|treasure|blood|map|gold|powerstone|incubator) sacrificed$/,
   )?.[1];
   const countResource =
     tag === 'artifact count'
-      ? '(?:artifacts?|treasures?|clues?)'
+      ? '(?:artifacts?|treasures?|clues?|food)'
       : tag === 'treasure count'
         ? 'treasures?'
-        : tag === 'clue count'
+      : tag === 'clue count'
           ? '(?:clues?|investigate)'
+        : tag === 'food count'
+          ? 'food'
       : tag === 'creature count'
         ? 'creatures?'
         : tag === 'token count'
           ? 'tokens?'
           : '';
   const abilitySegments = text
-    .split(/\n|(?<=\.)\s+/)
-    .reduce<string[]>((segments, segment) => {
-      const trimmed = segment.trim();
-      if (!trimmed) return segments;
-      if (
-        segments.length > 0 &&
-        /^(?:if|when) (?:you|they|that player|an opponent) do\b/.test(trimmed)
-      ) {
-        segments[segments.length - 1] += ` ${trimmed}`;
-      } else {
-        segments.push(trimmed);
-      }
-      return segments;
-    }, []);
+    // Oracle text uses newline-delimited paragraphs for distinct abilities.
+    // Keep every sentence in that paragraph together so timing restrictions
+    // apply to the correct effect and cannot leak into another ability.
+    .split(/\n+/)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
   const relevantSegments = abilitySegments
     .filter((segment) => {
       if (isSacrificeTag) {
@@ -574,6 +624,7 @@ function hasRepeatableSynergy(card: WorkspaceCard, tag: string) {
         'card draw': /\bdraws?\b|\bcard draw\b/,
         'land fetching': /\bsearch your library\b[^.]*\bland\b/,
         'mana ramp': /\badd\b[^.]*\bmana\b|\bland\b[^.]*\bonto the battlefield\b/,
+        'cost reduction': /\bcosts?\b[^.]*\bless\b|\breduce\b[^.]*\bcost\b|\bwithout paying\b[^.]*\bmana cost\b|\brather than pay\b[^.]*\bmana cost\b|\b(?:affinity|convoke|delve|improvise)\b/,
         'creature theft': /\bgain control of\b[^.]*\bcreature\b/,
         'combat damage': /\bcombat damage\b|\bdouble strike\b|\btrample\b|\bcan'?t be blocked\b|\bunblockable\b|\b(?:double|triple)\b[^.]*\bdamage\b/,
         'impulse draw': /\bexile\b[^.]*\btop\b|\byou may (?:play|cast)\b/,
@@ -598,13 +649,14 @@ function hasRepeatableSynergy(card: WorkspaceCard, tag: string) {
       const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       return new RegExp(`\\b${escapedTag}\\b`).test(segment);
     });
-  if (!relevantSegments.length) return false;
+  if (!relevantSegments.length)
+    return { repeatable: false, multiUsePerTurn: false, instantSpeed: false };
   const frontName = card.name.split('//')[0].trim().toLowerCase();
   const escapedName = frontName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const isPermanent = !/\b(?:instant|sorcery)\b/.test(
     card.cardData?.typeLine?.split('//')[0] ?? '',
   );
-  return relevantSegments.some((segment) => {
+  const segmentDetails = relevantSegments.map((segment) => {
     const recurringTrigger =
       /\b(?:at the beginning of|whenever|each (?:turn|upkeep|end step|combat)|once each turn)\b/.test(
         segment,
@@ -624,6 +676,22 @@ function hasRepeatableSynergy(card: WorkspaceCard, tag: string) {
       !discardsSelf &&
       !exilesSelf &&
       !/\bactivate only once\b/.test(segment);
+    const activatedAbility = segment.includes(':');
+    const oncePerTurnLimit =
+      /\b(?:activate|triggers?) only once (?:each|per) turn\b|\bonly once (?:each|per) turn\b/.test(
+        segment,
+      );
+    const hasTapCost =
+      /\{t\}\s*(?:,|:)|\btap (?:this|an?|another|target|untapped) [^:]*:/.test(
+        segment,
+      );
+    const unrestrictedTrigger =
+      /\b(?:whenever|each time)\b/.test(segment) && !oncePerTurnLimit;
+    const multiUsePerTurn =
+      unrestrictedTrigger ||
+      (reusableActivation && !hasTapCost && !oncePerTurnLimit);
+    const instantSpeed =
+      activatedAbility && !/\bactivate only as a sorcery\b/.test(segment);
     const continuousCountEffect =
       isCountTag &&
       isPermanent &&
@@ -638,13 +706,21 @@ function hasRepeatableSynergy(card: WorkspaceCard, tag: string) {
       /\b(?:you control|your opponents? control|spells? you cast)\b[^.]*(?:\bhave\b|\bhas\b|\bgets?\b|\bcosts?\b)/.test(
         segment,
       );
-    return (
+    return {
+      repeatable:
       recurringTrigger ||
       reusableActivation ||
       continuousCountEffect ||
-      continuousGeneralEffect
-    );
+      continuousGeneralEffect,
+      multiUsePerTurn,
+      instantSpeed,
+    };
   });
+  return {
+    repeatable: segmentDetails.some((detail) => detail.repeatable),
+    multiUsePerTurn: segmentDetails.some((detail) => detail.multiUsePerTurn),
+    instantSpeed: segmentDetails.some((detail) => detail.instantSpeed),
+  };
 }
 function overloadMultiEffectAmount(card: WorkspaceCard, tag: string) {
   if (!cardHasOverload(card)) return 0;
@@ -665,10 +741,11 @@ function tagModifier(card: WorkspaceCard, tag: string) {
   const sacrificeAmount = sacrificeSynergyAmount(card, tag);
   const overloadAmount = overloadMultiEffectAmount(card, tag);
   const amount = Math.max(countAmount, sacrificeAmount, overloadAmount);
-  const repeatable = hasRepeatableSynergy(card, tag);
+  const timing = repeatabilityForSynergy(card, tag);
+  const repeatable = timing.repeatable;
   const quantityBonus =
     amount > 1 ? Math.min(1, (amount - 1) * 0.25) : 0;
-  const modifierBonus =
+  const repeatabilityBonus =
     amount > 0
       ? repeatable
         ? quantityBonus > 0
@@ -678,6 +755,10 @@ function tagModifier(card: WorkspaceCard, tag: string) {
       : repeatable
         ? 0.25
         : 0;
+  const multiUseBonus = timing.multiUsePerTurn ? 0.25 : 0;
+  const instantSpeedBonus = timing.instantSpeed ? 0.25 : 0;
+  const modifierBonus =
+    repeatabilityBonus + multiUseBonus + instantSpeedBonus;
   const baseLabel =
     sacrificeAmount > 0
       ? 'enabler'
@@ -690,9 +771,14 @@ function tagModifier(card: WorkspaceCard, tag: string) {
     amount,
     applied: amount > 0 || repeatable,
     quantityBonus,
+    repeatabilityBonus,
+    multiUseBonus,
+    instantSpeedBonus,
     modifierBonus,
     label: repeatable ? `repeatable ${baseLabel}` : baseLabel,
     repeatable,
+    multiUsePerTurn: timing.multiUsePerTurn,
+    instantSpeed: timing.instantSpeed,
     value: Math.min(3, 1 + modifierBonus),
   };
 }
@@ -703,6 +789,7 @@ function synergyRole(card: WorkspaceCard, tag: string): SynergyRole {
       'artifact count',
       'treasure count',
       'clue count',
+      'food count',
       'token count',
       'creature count',
     ].includes(tag)
@@ -712,10 +799,37 @@ function synergyRole(card: WorkspaceCard, tag: string): SynergyRole {
       : 'payoff';
   if (
     tag === 'sacrifice' ||
-    /^type-event: (?:artifact|creature|land|token) sacrificed$/.test(tag)
+    /^type-event: (?:artifact|creature|land|token|clue|food|treasure|blood|map|gold|powerstone|incubator) sacrificed$/.test(
+      tag,
+    )
   )
     return sacrificeSynergyAmount(card, tag) > 0 ? 'enabler' : 'payoff';
   return 'neutral';
+}
+function synergyPreviewRoles(card: WorkspaceCard, tag: string) {
+  const text = oracleTextForTagging(card);
+  const producer = countSynergyProductionAmount(card, tag) > 0;
+  const enabler = sacrificeSynergyAmount(card, tag) > 0;
+  const countPayoffPatterns: Record<string, RegExp> = {
+    'artifact count': /\b(?:number of|for each) artifacts?\b|\bartifacts you control\b|\b(?:improvise|metalcraft|affinity for artifacts)\b/,
+    'treasure count': /\b(?:number of|for each) treasures?\b|\btreasures you control\b/,
+    'clue count': /\b(?:number of|for each) clues?\b|\bclues you control\b/,
+    'food count': /\b(?:number of|for each) food\b|\bfood you control\b/,
+    'token count': /\b(?:number of|for each) tokens?\b|\btokens you control\b/,
+    'creature count': /\b(?:number of|for each) creatures?\b|\bcreatures you control\b/,
+  };
+  const sacrificeTag =
+    tag === 'sacrifice' ||
+    /^type-event: .+ sacrificed$/.test(tag);
+  const payoff = sacrificeTag
+    ? /\b(?:when|whenever|if)\b[^.]*\bsacrific(?:e|es|ed)\b|\bwhenever you sacrifice\b/.test(
+        text,
+      )
+    : Boolean(countPayoffPatterns[tag]?.test(text));
+  return {
+    enabler: producer || enabler,
+    payoff,
+  };
 }
 function rolesComplement(first: SynergyRole, second: SynergyRole) {
   return (
@@ -723,6 +837,57 @@ function rolesComplement(first: SynergyRole, second: SynergyRole) {
     (first === 'payoff' && second === 'producer') ||
     (first === 'enabler' && second === 'payoff') ||
     (first === 'payoff' && second === 'enabler')
+  );
+}
+function SynergyPreviewCard({
+  card,
+  tag,
+  commander,
+  onSelect,
+}: {
+  card: WorkspaceCard;
+  tag: string;
+  commander: string;
+  onSelect: () => void;
+}) {
+  const modifier = tagModifier(card, tag);
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className="flex w-full items-center gap-3 rounded-xl border border-white/8 bg-black/20 p-3 text-left hover:border-lime-300/30"
+    >
+      <div className="h-20 w-14 shrink-0 overflow-hidden rounded-md bg-white/5">
+        {card.cardData?.imageUri && (
+          <img
+            src={card.cardData.imageUri}
+            alt=""
+            className="h-full w-full object-cover"
+            loading="lazy"
+          />
+        )}
+      </div>
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium text-zinc-200">
+          {card.name}
+          <FoilIndicator cacheKey={card.cardData?.cacheKey} />
+          {card.name === commander && (
+            <Crown className="ml-1.5 inline size-3 text-lime-300" />
+          )}
+        </p>
+        <p className="mt-1 text-[10px] leading-4 text-zinc-600">
+          {card.cardData?.typeLine}
+        </p>
+        <p className="mt-1 font-mono text-[10px] text-zinc-500">
+          {card.quantity}× · MV {card.cardData?.manaValue ?? '—'}
+          {modifier.applied && (
+            <span className="ml-1.5 text-zinc-600">
+              · ×{modifier.value.toFixed(2)}
+            </span>
+          )}
+        </p>
+      </div>
+    </button>
   );
 }
 function displayTag(tag: string) {
@@ -775,9 +940,18 @@ function HighlightedRulesText({
     'impulse draw': ['exile', 'top', 'play', 'cast', 'until'],
     'land fetching': ['search your library', 'land'],
     'mana ramp': ['add', 'mana'],
+    'cost reduction': [
+      'cost',
+      'less',
+      'affinity',
+      'convoke',
+      'delve',
+      'improvise',
+    ],
     'artifact count': ['artifact', 'treasure', 'metalcraft', 'improvise'],
     'treasure count': ['treasure'],
     'clue count': ['clue', 'investigate'],
+    'food count': ['food'],
     'token count': ['token'],
     'creature count': ['creature'],
     'creature theft': ['gain control', 'creature', 'until end of turn'],
@@ -911,7 +1085,14 @@ export default function CutWorkspace({
 }: Props) {
   const [criterion, setCriterion] = useState<Criterion>('all');
   const [selectedCuts, setSelectedCuts] = useState<Set<string>>(new Set());
-  const [keptCards, setKeptCards] = useState<Set<string>>(new Set());
+  const [keptCards, setKeptCards] = useState<Set<string>>(
+    () =>
+      new Set(
+        cards
+          .filter((card) => card.name === commander)
+          .map((card) => keyOf(card)),
+      ),
+  );
   const [browserTab, setBrowserTab] = useState<'undecided' | 'keep' | 'cut'>(
     'undecided',
   );
@@ -929,7 +1110,7 @@ export default function CutWorkspace({
     new Set(),
   );
   const [focusedKey, setFocusedKey] = useState('');
-  const [, setFlipRevision] = useState(0);
+  const [flippedCards, setFlippedCards] = useState<Set<string>>(new Set());
   const baseCurve = useMemo(() => curveFor(cards), [cards]);
   const workingCurve = useMemo(() => {
     const curve = [...baseCurve];
@@ -1004,9 +1185,7 @@ export default function CutWorkspace({
   }, [cards, commander, knownTypes, ignoredSynergies]);
   const recommendations = useMemo(() => {
     const eligible = cards.filter(
-      (card) =>
-        card.name !== commander &&
-        !card.cardData?.typeLine?.startsWith('Basic Land'),
+      (card) => !card.cardData?.typeLine?.startsWith('Basic Land'),
     );
     const frequency = new Map<string, number>();
     eligible.forEach((card) =>
@@ -1246,6 +1425,7 @@ export default function CutWorkspace({
   const focused =
     recommendations.find((item) => keyOf(item.card) === focusedKey) ??
     ranked[0];
+  const focusedIsCommander = focused?.card.name === commander;
   const focusedScoreCards = focused
     ? ([
         {
@@ -1459,6 +1639,7 @@ export default function CutWorkspace({
     setFocusedKey(keyOf(ranked[(index + 1) % ranked.length].card));
   }
   function markCut(card: WorkspaceCard) {
+    if (card.name === commander) return;
     advanceAfterDecision(card);
     const key = keyOf(card);
     setKeptCards((current) => {
@@ -1469,7 +1650,7 @@ export default function CutWorkspace({
     setSelectedCuts((current) => new Set(current).add(key));
   }
   function markKeep(card: WorkspaceCard) {
-    advanceAfterDecision(card);
+    if (card.name !== commander) advanceAfterDecision(card);
     const key = keyOf(card);
     setSelectedCuts((current) => {
       const next = new Set(current);
@@ -1479,6 +1660,7 @@ export default function CutWorkspace({
     setKeptCards((current) => new Set(current).add(key));
   }
   function resetDecision(card: WorkspaceCard) {
+    if (card.name === commander) return;
     const key = keyOf(card);
     setSelectedCuts((current) => {
       const next = new Set(current);
@@ -1492,19 +1674,19 @@ export default function CutWorkspace({
     });
   }
   function toggleCut(card: WorkspaceCard) {
+    if (card.name === commander) return;
     if (selectedCuts.has(keyOf(card))) resetDecision(card);
     else markCut(card);
   }
   function flipFocusedCard() {
-    if (
-      !focused?.card.cardData?.backImageUri ||
-      !focused.card.cardData.imageUri
-    )
-      return;
-    const front = focused.card.cardData.imageUri;
-    focused.card.cardData.imageUri = focused.card.cardData.backImageUri;
-    focused.card.cardData.backImageUri = front;
-    setFlipRevision((revision) => revision + 1);
+    if (!focused?.card.cardData?.backImageUri) return;
+    const key = keyOf(focused.card);
+    setFlippedCards((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   }
   const adjustedCurve = workingCurve;
   const discoveredSynergies = useMemo(() => {
@@ -1539,6 +1721,23 @@ export default function CutWorkspace({
   const selectedSynergyGroup = discoveredSynergies.find(
     (group) => group.tag === selectedSynergy,
   );
+  const selectedSynergyRoleGroups = useMemo(() => {
+    const result = {
+      both: [] as WorkspaceCard[],
+      enablers: [] as WorkspaceCard[],
+      payoffs: [] as WorkspaceCard[],
+      other: [] as WorkspaceCard[],
+    };
+    if (!selectedSynergyGroup) return result;
+    selectedSynergyGroup.cards.forEach((card) => {
+      const roles = synergyPreviewRoles(card, selectedSynergyGroup.tag);
+      if (roles.enabler && roles.payoff) result.both.push(card);
+      else if (roles.enabler) result.enablers.push(card);
+      else if (roles.payoff) result.payoffs.push(card);
+      else result.other.push(card);
+    });
+    return result;
+  }, [selectedSynergyGroup]);
   const explainedModifier = modifierExplanation
     ? tagModifier(modifierExplanation.card, modifierExplanation.tag)
     : null;
@@ -1627,11 +1826,6 @@ export default function CutWorkspace({
               Choose a card below to preview the impact of removing it.
             </p>
           </div>
-          {focused?.card.cardData?.backImageUri && (
-            <Button variant="outline" size="sm" onClick={flipFocusedCard}>
-              <RefreshCw data-icon="inline-start" /> Flip card
-            </Button>
-          )}
         </div>
         <section className="mb-5 rounded-2xl border border-white/8 bg-[#101311] px-4 py-3">
           <div className="grid gap-3 lg:grid-cols-[180px_minmax(240px,1fr)_150px_220px] lg:items-center">
@@ -1701,27 +1895,79 @@ export default function CutWorkspace({
         </section>
         {focused && (
           <section className="mb-7 rounded-2xl border border-lime-300/15 bg-[#101311] p-5">
-            <div className="grid grid-cols-1 gap-5 lg:grid-cols-3 lg:items-stretch">
-              <div className="min-w-0 overflow-hidden rounded-xl border border-white/10 bg-black/20">
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-3 lg:items-start">
+              <div className="group relative min-w-0 origin-center rounded-[4.75%] bg-black/20 shadow-xl shadow-black/20 ring-1 ring-white/10 [perspective:1200px] transition-[transform,filter,box-shadow] duration-300 ease-out hover:z-20 hover:-translate-y-1 hover:scale-[1.035] hover:brightness-[1.04] hover:shadow-2xl hover:shadow-black/50 lg:aspect-[63/88]">
                 {focused.card.cardData?.imageUri ? (
-                  <img
-                    src={focused.card.cardData.imageUri}
-                    alt={`${focused.card.name} card art`}
-                    className="aspect-[63/88] w-full object-cover"
-                  />
+                  <div
+                    className="relative h-full w-full rounded-[4.75%] transition-transform duration-700 ease-in-out"
+                    style={{
+                      transformStyle: 'preserve-3d',
+                      transform: flippedCards.has(keyOf(focused.card))
+                        ? 'rotateY(180deg)'
+                        : 'rotateY(0deg)',
+                    }}
+                  >
+                    <img
+                      src={focused.card.cardData.imageUri}
+                      alt={`${focused.card.name} front face`}
+                      className="absolute inset-0 h-full w-full rounded-[4.75%] object-cover"
+                      style={{ backfaceVisibility: 'hidden' }}
+                    />
+                    {focused.card.cardData.backImageUri && (
+                      <img
+                        src={focused.card.cardData.backImageUri}
+                        alt={`${focused.card.name} back face`}
+                        className="absolute inset-0 h-full w-full rounded-[4.75%] object-cover"
+                        style={{
+                          backfaceVisibility: 'hidden',
+                          transform: 'rotateY(180deg)',
+                        }}
+                      />
+                    )}
+                  </div>
                 ) : (
-                  <div className="grid aspect-[63/88] place-items-center text-xs text-zinc-600">
+                  <div className="grid aspect-[63/88] place-items-center overflow-hidden rounded-[4.75%] border border-white/10 text-xs text-zinc-600">
                     Artwork unavailable
                   </div>
                 )}
+                <div className="pointer-events-none absolute inset-0 z-[5] overflow-hidden rounded-[4.75%] opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+                  <div className="absolute -left-1/2 -top-1/4 h-[150%] w-1/2 rotate-12 bg-gradient-to-r from-transparent via-white/10 to-transparent blur-sm transition-transform duration-700 ease-out group-hover:translate-x-[300%]" />
+                  <div className="absolute inset-0 rounded-[4.75%] ring-1 ring-inset ring-lime-200/20" />
+                </div>
+                {focused.card.cardData?.cacheKey.split(':').at(-1) ===
+                  'foil' && (
+                  <div
+                    className="foil-card-effect pointer-events-none absolute inset-0 z-[6] rounded-[4.75%]"
+                    aria-hidden="true"
+                  />
+                )}
+                {focused.card.cardData?.backImageUri && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={flipFocusedCard}
+                    aria-label={`Show other face of ${focused.card.name}`}
+                    title="Flip card"
+                    className="absolute bottom-3 right-3 z-10 size-9 rounded-full border border-white/20 bg-black/55 text-white shadow-lg backdrop-blur-sm hover:border-lime-300/40 hover:bg-black/75 hover:text-lime-200"
+                  >
+                    <RefreshCw
+                      className={`size-4 transition-transform duration-700 ${flippedCards.has(keyOf(focused.card)) ? 'rotate-180' : ''}`}
+                    />
+                  </Button>
+                )}
               </div>
-              <div className="flex min-w-0 flex-col lg:h-full lg:overflow-hidden">
+              <div className="flex min-w-0 flex-col lg:aspect-[63/88] lg:overflow-hidden">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-lime-300">
                   Interactive preview
                 </p>
                 <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
                   <h2 className="font-heading text-2xl font-semibold text-white">
                     {focused.card.name}
+                    <FoilIndicator cacheKey={focused.card.cardData?.cacheKey} />
+                    {focusedIsCommander && (
+                      <Crown className="ml-2 inline size-4 text-lime-300" />
+                    )}
                   </h2>
                   {priceOf(focused.card) > 0 && (
                     <span className="font-mono text-xs font-normal text-zinc-600">
@@ -1889,7 +2135,7 @@ export default function CutWorkspace({
                     : ' No EDHREC rank is currently available.'}
                 </p>
               </div>
-              <div className="min-w-0 lg:h-full lg:overflow-hidden">
+              <div className="min-w-0 lg:aspect-[63/88] lg:overflow-hidden">
                 <article className="hidden">
                   <div className="flex items-center gap-2">
                     <BarChart3 className="size-4 text-lime-300" />
@@ -1976,6 +2222,7 @@ export default function CutWorkspace({
                       >
                         <span className="truncate text-[11px] text-zinc-300">
                           {match.card.name}
+                          <FoilIndicator cacheKey={match.card.cardData?.cacheKey} />
                           {match.card.name === commander && (
                             <Crown className="ml-1 inline size-3 text-lime-300" />
                           )}
@@ -2113,8 +2360,9 @@ export default function CutWorkspace({
                   <Button
                     variant="ghost"
                     disabled={
-                      !selectedCuts.has(keyOf(focused.card)) &&
-                      !keptCards.has(keyOf(focused.card))
+                      focusedIsCommander ||
+                      (!selectedCuts.has(keyOf(focused.card)) &&
+                        !keptCards.has(keyOf(focused.card)))
                     }
                     onClick={() => resetDecision(focused.card)}
                   >
@@ -2127,11 +2375,12 @@ export default function CutWorkspace({
                         : 'outline'
                     }
                     onClick={() => markKeep(focused.card)}
+                    disabled={focusedIsCommander}
                   >
                     {keptCards.has(keyOf(focused.card)) && (
                       <Check data-icon="inline-start" />
                     )}{' '}
-                    Keep
+                    {focusedIsCommander ? 'Commander — Kept' : 'Keep'}
                   </Button>
                   <Button
                     variant={
@@ -2140,6 +2389,7 @@ export default function CutWorkspace({
                         : 'default'
                     }
                     onClick={() => toggleCut(focused.card)}
+                    disabled={focusedIsCommander}
                   >
                     {selectedCuts.has(keyOf(focused.card)) ? (
                       <>
@@ -2267,15 +2517,23 @@ export default function CutWorkspace({
                         <span
                           onClick={(event) => {
                             event.stopPropagation();
-                            toggleCut(item.card);
+                            if (item.card.name !== commander)
+                              toggleCut(item.card);
                           }}
-                          className={`grid size-6 place-items-center rounded-md border text-[10px] ${selected ? 'border-lime-300 bg-lime-300 text-[#11150d]' : 'border-white/10 text-zinc-600'}`}
+                          className={`grid size-6 place-items-center rounded-md border text-[10px] ${item.card.name === commander ? 'cursor-not-allowed border-lime-300/30 bg-lime-300/10 text-lime-300' : selected ? 'border-lime-300 bg-lime-300 text-[#11150d]' : 'border-white/10 text-zinc-600'}`}
                         >
-                          {selected ? <Check className="size-3" /> : index + 1}
+                          {item.card.name === commander ? (
+                            <Crown className="size-3" />
+                          ) : selected ? (
+                            <Check className="size-3" />
+                          ) : (
+                            index + 1
+                          )}
                         </span>
                         <span className="min-w-0">
                           <span className="block truncate text-xs font-medium text-zinc-200">
                             {item.card.name}
+                            <FoilIndicator cacheKey={item.card.cardData?.cacheKey} />
                           </span>
                           <span className="block truncate text-[9px] text-zinc-600">
                             MV {item.card.cardData?.manaValue ?? '—'} ·{' '}
@@ -2514,9 +2772,21 @@ export default function CutWorkspace({
                 <span className="text-zinc-200">Repeatability:</span>{' '}
                 {explainedModifier.repeatable
                   ? explainedModifier.amount > 0
-                    ? `Yes — doubles the quantity bonus to +${explainedModifier.modifierBonus.toFixed(2)}.`
+                    ? `Yes — doubles the producer/quantity contribution to +${explainedModifier.repeatabilityBonus.toFixed(2)}.`
                     : 'Yes — adds a +0.25 continuous-effect bonus.'
                   : 'No — the effect is treated as one-time.'}
+              </p>
+              <p>
+                <span className="text-zinc-200">Multiple uses per turn:</span>{' '}
+                {explainedModifier.multiUsePerTurn
+                  ? `Yes — unrestricted activation or “whenever” trigger: +${explainedModifier.multiUseBonus.toFixed(2)}.`
+                  : 'No additional bonus (tap or once-per-turn limits may apply).'}
+              </p>
+              <p>
+                <span className="text-zinc-200">Instant-speed activation:</span>{' '}
+                {explainedModifier.instantSpeed
+                  ? `Yes — no “activate only as a sorcery” restriction: +${explainedModifier.instantSpeedBonus.toFixed(2)}.`
+                  : 'No additional instant-speed bonus.'}
               </p>
               <p className="border-t border-white/8 pt-3 font-mono text-zinc-300">
                 1.00 + {explainedModifier.modifierBonus.toFixed(2)} = ×
@@ -2619,52 +2889,87 @@ export default function CutWorkspace({
                 </Button>
               </div>
             </div>
-            <div className="grid max-h-[65vh] gap-3 overflow-y-auto p-5 sm:grid-cols-2 lg:grid-cols-3">
-              {selectedSynergyGroup.cards.map((card) => (
-                <button
-                  type="button"
-                  key={keyOf(card)}
-                  onClick={() => {
-                    setFocusedKey(keyOf(card));
-                    setSelectedSynergy('');
-                  }}
-                  className="flex items-center gap-3 rounded-xl border border-white/8 bg-black/20 p-3 text-left hover:border-lime-300/30"
-                >
-                  <div className="h-20 w-14 shrink-0 overflow-hidden rounded-md bg-white/5">
-                    {card.cardData?.imageUri && (
-                      <img
-                        src={card.cardData.imageUri}
-                        alt=""
-                        className="h-full w-full object-cover"
-                        loading="lazy"
+            <div className="max-h-[65vh] space-y-5 overflow-y-auto p-5">
+              {selectedSynergyRoleGroups.both.length > 0 && (
+                <div>
+                  <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-lime-300">
+                    Enabler / Payoff
+                  </h3>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {selectedSynergyRoleGroups.both.map((card) => (
+                      <SynergyPreviewCard
+                        key={keyOf(card)}
+                        card={card}
+                        tag={selectedSynergyGroup.tag}
+                        commander={commander}
+                        onSelect={() => {
+                          setFocusedKey(keyOf(card));
+                          setSelectedSynergy('');
+                        }}
                       />
-                    )}
+                    ))}
                   </div>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-zinc-200">
-                      {card.name}
-                      {card.name === commander && (
-                        <Crown className="ml-1.5 inline size-3 text-lime-300" />
+                </div>
+              )}
+              <div className="grid gap-5 md:grid-cols-2">
+                {(
+                  [
+                    ['Enablers', selectedSynergyRoleGroups.enablers],
+                    ['Payoffs', selectedSynergyRoleGroups.payoffs],
+                  ] as const
+                ).map(([label, roleCards]) => (
+                  <div key={label} className="min-w-0">
+                    <div className="mb-2 flex items-center justify-between border-b border-white/8 pb-2">
+                      <h3 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-400">
+                        {label}
+                      </h3>
+                      <span className="font-mono text-[10px] text-zinc-600">
+                        {roleCards.length}
+                      </span>
+                    </div>
+                    <div className="space-y-3">
+                      {roleCards.map((card) => (
+                        <SynergyPreviewCard
+                          key={keyOf(card)}
+                          card={card}
+                          tag={selectedSynergyGroup.tag}
+                          commander={commander}
+                          onSelect={() => {
+                            setFocusedKey(keyOf(card));
+                            setSelectedSynergy('');
+                          }}
+                        />
+                      ))}
+                      {roleCards.length === 0 && (
+                        <p className="rounded-xl border border-dashed border-white/8 py-6 text-center text-xs text-zinc-700">
+                          No {label.toLowerCase()} detected.
+                        </p>
                       )}
-                    </p>
-                    <p className="mt-1 text-[10px] leading-4 text-zinc-600">
-                      {card.cardData?.typeLine}
-                    </p>
-                    <p className="mt-1 font-mono text-[10px] text-zinc-500">
-                      {card.quantity}× · MV {card.cardData?.manaValue ?? '—'}
-                      {tagModifier(card, selectedSynergyGroup.tag).applied && (
-                        <span className="ml-1.5 text-zinc-600">
-                          · ×
-                          {tagModifier(
-                            card,
-                            selectedSynergyGroup.tag,
-                          ).value.toFixed(2)}{' '}
-                        </span>
-                      )}
-                    </p>
+                    </div>
                   </div>
-                </button>
-              ))}
+                ))}
+              </div>
+              {selectedSynergyRoleGroups.other.length > 0 && (
+                <div>
+                  <h3 className="mb-2 border-b border-white/8 pb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">
+                    Other connections
+                  </h3>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {selectedSynergyRoleGroups.other.map((card) => (
+                      <SynergyPreviewCard
+                        key={keyOf(card)}
+                        card={card}
+                        tag={selectedSynergyGroup.tag}
+                        commander={commander}
+                        onSelect={() => {
+                          setFocusedKey(keyOf(card));
+                          setSelectedSynergy('');
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </section>
         </div>
