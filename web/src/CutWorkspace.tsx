@@ -78,17 +78,17 @@ function popularityCutScore(card: WorkspaceCard) {
   if (!rank || rank < 1) return 0.5;
   return Math.min(1, Math.log10(rank + 1) / Math.log10(25000));
 }
-function creatureTypesOf(card?: WorkspaceCard) {
+function subtypesOf(card?: WorkspaceCard) {
   const frontType = card?.cardData?.typeLine?.split('//')[0] ?? '';
-  const [types, subtypes] = frontType.split('—').map((part) => part.trim());
-  return types?.includes('Creature') && subtypes
+  const [, subtypes] = frontType.split('—').map((part) => part.trim());
+  return subtypes
     ? subtypes
         .split(/\s+/)
         .filter(Boolean)
         .map((type) => type.toLowerCase())
     : [];
 }
-function synergyTags(card?: WorkspaceCard, knownCreatureTypes: string[] = []) {
+function synergyTags(card?: WorkspaceCard, knownTypes: string[] = []) {
   if (!card) return [];
   const tags = new Set<string>();
   const text = card.cardData?.oracleText.toLowerCase() ?? '';
@@ -114,7 +114,15 @@ function synergyTags(card?: WorkspaceCard, knownCreatureTypes: string[] = []) {
     )
   )
     tags.add('mana ramp');
-  const producesToken = /\bcreates? [^.]*\btoken/.test(text);
+  const investigates =
+    /\binvestigate\b/.test(text) ||
+    card.cardData?.keywords?.some(
+      (keyword) => keyword.toLowerCase() === 'investigate',
+    );
+  const producesClue =
+    /\bcreates? [^.]*\bclues?\b|\bclue tokens?\b/.test(text) || investigates;
+  const producesToken =
+    /\bcreates? [^.]*\btoken/.test(text) || producesClue;
   const producesCreatureToken =
     /\bcreates? [^.]*\bcreatures? tokens?\b/.test(text);
   const producesTreasure =
@@ -137,12 +145,18 @@ function synergyTags(card?: WorkspaceCard, knownCreatureTypes: string[] = []) {
     card.cardData?.keywords?.some(
       (keyword) => keyword.toLowerCase() === 'improvise',
     );
-  if (countsArtifacts || producesTreasure) tags.add('artifact count');
+  if (countsArtifacts || producesTreasure || producesClue)
+    tags.add('artifact count');
   const countsTreasures =
     /\b(?:number of|for each) treasures?\b|\b(?:you )?control (?:one|two|three|four|five|\d+) or more treasures?\b/.test(
       text,
     );
   if (countsTreasures || producesTreasure) tags.add('treasure count');
+  const countsClues =
+    /\b(?:number of|for each) clues?\b|\b(?:you )?control (?:one|two|three|four|five|\d+) or more clues?\b/.test(
+      text,
+    );
+  if (countsClues || producesClue) tags.add('clue count');
   const countsTokens =
     /\b(?:number of|for each) tokens?\b|\b(?:you )?control (?:one|two|three|four|five|\d+) or more tokens?\b/.test(
       text,
@@ -277,8 +291,8 @@ function synergyTags(card?: WorkspaceCard, knownCreatureTypes: string[] = []) {
     /\btokens? (?:is|are|was|were|you control is) sacrificed\b/.test(text)
   )
     addTypeEvent('token', 'sacrificed');
-  creatureTypesOf(card).forEach((type) => tags.add(`creature: ${type}`));
-  knownCreatureTypes.forEach((type) => {
+  subtypesOf(card).forEach((type) => tags.add(`type: ${type}`));
+  knownTypes.forEach((type) => {
     const escaped = type.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const plurals = type.endsWith('f')
       ? `${type.slice(0, -1)}ves`
@@ -286,7 +300,7 @@ function synergyTags(card?: WorkspaceCard, knownCreatureTypes: string[] = []) {
         ? `${type.slice(0, -1)}ies`
         : `${type}s`;
     if (new RegExp(`\\b(?:${escaped}|${plurals})\\b`, 'i').test(text))
-      tags.add(`creature: ${type}`);
+      tags.add(`type: ${type}`);
   });
   return [...tags];
 }
@@ -316,14 +330,36 @@ function createdTokenAmount(card: WorkspaceCard, resource?: string) {
   }
   return highest;
 }
+function clueProductionAmount(card: WorkspaceCard) {
+  const text = card.cardData?.oracleText.toLowerCase() ?? '';
+  let investigateAmount = 0;
+  if (/\binvestigate\b/.test(text)) {
+    investigateAmount = /\binvestigate (?:twice|two times)\b/.test(text)
+      ? 2
+      : /\binvestigate (?:three times|thrice)\b/.test(text)
+        ? 3
+        : 1;
+  } else if (
+    card.cardData?.keywords?.some(
+      (keyword) => keyword.toLowerCase() === 'investigate',
+    )
+  ) {
+    investigateAmount = 1;
+  }
+  return Math.max(createdTokenAmount(card, 'clues?'), investigateAmount);
+}
 function countSynergyProductionAmount(card: WorkspaceCard, tag: string) {
   return (
     tag === 'artifact count' || tag === 'treasure count'
-      ? createdTokenAmount(card, 'treasures?')
+      ? tag === 'artifact count'
+        ? createdTokenAmount(card, 'treasures?') + clueProductionAmount(card)
+        : createdTokenAmount(card, 'treasures?')
+      : tag === 'clue count'
+        ? clueProductionAmount(card)
       : tag === 'creature count'
         ? createdTokenAmount(card, 'creatures?')
         : tag === 'token count'
-          ? createdTokenAmount(card)
+          ? Math.max(createdTokenAmount(card), clueProductionAmount(card))
           : 0
   );
 }
@@ -386,6 +422,7 @@ function hasRepeatableSynergy(card: WorkspaceCard, tag: string) {
   const isCountTag = [
     'artifact count',
     'treasure count',
+    'clue count',
     'token count',
     'creature count',
   ].includes(tag);
@@ -398,9 +435,11 @@ function hasRepeatableSynergy(card: WorkspaceCard, tag: string) {
   )?.[1];
   const countResource =
     tag === 'artifact count'
-      ? '(?:artifacts?|treasures?)'
+      ? '(?:artifacts?|treasures?|clues?)'
       : tag === 'treasure count'
         ? 'treasures?'
+        : tag === 'clue count'
+          ? '(?:clues?|investigate)'
       : tag === 'creature count'
         ? 'creatures?'
         : tag === 'token count'
@@ -437,8 +476,10 @@ function hasRepeatableSynergy(card: WorkspaceCard, tag: string) {
           `\\b(?:number of|for each) ${countResource}\\b|\\bcontrol (?:one|two|three|four|five|\\d+) or more ${countResource}\\b`,
         ).test(segment);
       const namedMechanic =
-        tag === 'artifact count' &&
-        /\b(?:improvise|metalcraft|affinity for artifacts)\b/.test(segment);
+        (tag === 'artifact count' &&
+          /\b(?:improvise|metalcraft|affinity for artifacts)\b/.test(segment)) ||
+        (['artifact count', 'clue count', 'token count'].includes(tag) &&
+          /\binvestigate\b/.test(segment));
       if (isCountTag)
         return createsRelevantResource || countsRelevantResource || namedMechanic;
       const tagPatterns: Record<string, RegExp> = {
@@ -463,7 +504,7 @@ function hasRepeatableSynergy(card: WorkspaceCard, tag: string) {
             segment,
           )
         );
-      if (tag.startsWith('creature: ')) return false;
+      if (tag.startsWith('type: ')) return false;
       const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       return new RegExp(`\\b${escapedTag}\\b`).test(segment);
     });
@@ -512,10 +553,15 @@ function tagModifier(card: WorkspaceCard, tag: string) {
   const sacrificeAmount = sacrificeSynergyAmount(card, tag);
   const amount = Math.max(countAmount, sacrificeAmount);
   const repeatable = hasRepeatableSynergy(card, tag);
-  const quantityBonus = amount > 0 ? Math.min(1, amount * 0.25) : 0;
+  const quantityBonus =
+    amount > 1 ? Math.min(1, (amount - 1) * 0.25) : 0;
   const modifierBonus =
     amount > 0
-      ? quantityBonus * (repeatable ? 2 : 1)
+      ? repeatable
+        ? quantityBonus > 0
+          ? quantityBonus * 2
+          : 0.25
+        : quantityBonus
       : repeatable
         ? 0.25
         : 0;
@@ -536,8 +582,8 @@ function tagModifier(card: WorkspaceCard, tag: string) {
   };
 }
 function displayTag(tag: string) {
-  if (tag.startsWith('creature: '))
-    return `Creature type: ${tag.slice(10).replace(/\b\w/g, (letter) => letter.toUpperCase())}`;
+  if (tag.startsWith('type: '))
+    return `Type: ${tag.slice(6).replace(/\b\w/g, (letter) => letter.toUpperCase())}`;
   if (tag.startsWith('type-event: ')) {
     const [type, ...event] = tag.slice(12).split(' ');
     return `${type.replace(/\b\w/g, (letter) => letter.toUpperCase())} — ${event.join(' ').replace(/\b\w/g, (letter) => letter.toUpperCase())}`;
@@ -587,6 +633,7 @@ function HighlightedRulesText({
     'mana ramp': ['add', 'mana'],
     'artifact count': ['artifact', 'treasure', 'metalcraft', 'improvise'],
     'treasure count': ['treasure'],
+    'clue count': ['clue', 'investigate'],
     'token count': ['token'],
     'creature count': ['creature'],
     'creature theft': ['gain control', 'creature', 'until end of turn'],
@@ -606,8 +653,8 @@ function HighlightedRulesText({
   const terms = [
     ...new Set(
       tags.flatMap((tag) =>
-        tag.startsWith('creature: ')
-          ? [tag.slice(10)]
+        tag.startsWith('type: ')
+          ? [tag.slice(6)]
           : tag.startsWith('type-event: ')
             ? tag.slice(12).split(' ')
             : (aliases[tag] ?? [tag]),
@@ -753,8 +800,8 @@ export default function CutWorkspace({
       ),
     [cards, selectedCuts, totalDeckPrice],
   );
-  const knownCreatureTypes = useMemo(
-    () => [...new Set(cards.flatMap((card) => creatureTypesOf(card)))],
+  const knownTypes = useMemo(
+    () => [...new Set(cards.flatMap((card) => subtypesOf(card)))],
     [cards],
   );
   const recommendations = useMemo(() => {
@@ -765,7 +812,7 @@ export default function CutWorkspace({
     );
     const frequency = new Map<string, number>();
     eligible.forEach((card) =>
-      synergyTags(card, knownCreatureTypes)
+      synergyTags(card, knownTypes)
         .filter((tag) => !ignoredSynergies.has(tag))
         .forEach((tag) =>
           frequency.set(tag, (frequency.get(tag) ?? 0) + card.quantity),
@@ -774,7 +821,7 @@ export default function CutWorkspace({
     const commanderTags = new Set(
       synergyTags(
         cards.find((card) => card.name === commander),
-        knownCreatureTypes,
+        knownTypes,
       ).filter((tag) => !ignoredSynergies.has(tag)),
     );
     return eligible.map((card) => {
@@ -798,7 +845,7 @@ export default function CutWorkspace({
             5,
         ),
       );
-      const allTags = synergyTags(card, knownCreatureTypes);
+      const allTags = synergyTags(card, knownTypes);
       const tags = allTags.filter((tag) => !ignoredSynergies.has(tag));
       const support = allTags.length
         ? tags.reduce(
@@ -816,15 +863,15 @@ export default function CutWorkspace({
       const commanderOverlap = allTags.length
         ? tags.filter((tag) => commanderTags.has(tag)).length / allTags.length
         : 0;
-      const allCreatureTags = allTags.filter((tag) =>
-        tag.startsWith('creature: '),
+      const allTypeTags = allTags.filter((tag) =>
+        tag.startsWith('type: '),
       );
-      const activeCreatureTags = tags.filter((tag) =>
-        tag.startsWith('creature: '),
+      const activeTypeTags = tags.filter((tag) =>
+        tag.startsWith('type: '),
       );
-      const commanderCreatureBoost = allCreatureTags.length
-        ? activeCreatureTags.filter((tag) => commanderTags.has(tag)).length /
-          allCreatureTags.length
+      const commanderTypeBoost = allTypeTags.length
+        ? activeTypeTags.filter((tag) => commanderTags.has(tag)).length /
+          allTypeTags.length
         : 0;
       const synergy =
         1 -
@@ -832,7 +879,7 @@ export default function CutWorkspace({
           1,
           support * 0.45 +
             commanderOverlap * 0.3 +
-            commanderCreatureBoost * 0.25,
+            commanderTypeBoost * 0.25,
         );
       const cardValue = priceOf(card) * card.quantity;
       const priceIsActive = budget !== null;
@@ -860,7 +907,7 @@ export default function CutWorkspace({
     commander,
     cardCount,
     workingCurve,
-    knownCreatureTypes,
+    knownTypes,
     selectedCuts,
     ignoredSynergies,
     budget,
@@ -908,7 +955,7 @@ export default function CutWorkspace({
             .filter((card) => keyOf(card) !== keyOf(focused.card))
             .map((card) => ({
               card,
-              shared: synergyTags(card, knownCreatureTypes).filter(
+              shared: synergyTags(card, knownTypes).filter(
                 (tag) =>
                   !ignoredSynergies.has(tag) &&
                   focused.activeTags.includes(tag),
@@ -917,7 +964,7 @@ export default function CutWorkspace({
             .filter((item) => item.shared.length)
             .sort((a, b) => b.shared.length - a.shared.length)
         : [],
-    [cards, focused, knownCreatureTypes, ignoredSynergies],
+    [cards, focused, knownTypes, ignoredSynergies],
   );
   const selectedCount = [...selectedCuts].reduce(
     (sum, key) =>
@@ -986,7 +1033,7 @@ export default function CutWorkspace({
   const discoveredSynergies = useMemo(() => {
     const groups = new Map<string, WorkspaceCard[]>();
     cards.forEach((card) =>
-      synergyTags(card, knownCreatureTypes).forEach((tag) =>
+      synergyTags(card, knownTypes).forEach((tag) =>
         groups.set(tag, [...(groups.get(tag) ?? []), card]),
       ),
     );
@@ -1003,7 +1050,7 @@ export default function CutWorkspace({
           b.count - a.count ||
           displayTag(a.tag).localeCompare(displayTag(b.tag)),
       );
-  }, [cards, knownCreatureTypes, ignoredSynergies]);
+  }, [cards, knownTypes, ignoredSynergies]);
   const selectedSynergyGroup = discoveredSynergies.find(
     (group) => group.tag === selectedSynergy,
   );
@@ -1710,7 +1757,9 @@ export default function CutWorkspace({
                 <p>
                   <span className="text-zinc-200">Quantity:</span>{' '}
                   {explainedModifier.amount} relevant item
-                  {explainedModifier.amount === 1 ? '' : 's'} × 0.25 = +
+                  {explainedModifier.amount === 1 ? '' : 's'};{' '}
+                  {Math.max(0, explainedModifier.amount - 1)} additional × 0.25
+                  {' = +'}
                   {explainedModifier.quantityBonus.toFixed(2)}
                 </p>
               )}
