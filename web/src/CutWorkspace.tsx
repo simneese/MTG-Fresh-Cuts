@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  startTransition,
+  type ReactNode,
+} from 'react';
 import {
   ArrowLeft,
   BarChart3,
@@ -16,16 +24,134 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import FoilIndicator from '@/components/FoilIndicator';
 import type { WorkspaceCard } from '@/DeckWorkspace';
-type Criterion = 'all' | 'curve' | 'synergy' | 'price' | 'popularity';
+import { extractCardEffects } from '@/synergy-engine';
+import type { CardEffect, EngineSignals } from '@/synergy-engine';
+type Criterion =
+  | 'all'
+  | 'curve'
+  | 'synergy'
+  | 'price'
+  | 'popularity';
 type Props = {
   deckName: string;
   commander: string;
   cards: WorkspaceCard[];
   cardCount: number;
   target: number;
+  contextualPopularity?: Map<string, ContextualPopularity>;
   onCardQuantityChange: (key: string, quantity: number) => void;
   onBack: () => void;
 };
+export type ContextualPopularity = {
+  rank: number;
+  poolSize: number;
+  percentile: number;
+  colorIdentity: string;
+};
+
+function OverflowConnectionTags({
+  tags,
+  renderTag,
+  onSelect,
+  moreClassName,
+}: {
+  tags: string[];
+  renderTag: (tag: string) => ReactNode;
+  onSelect: (tag: string) => void;
+  moreClassName: string;
+}) {
+  const rowRef = useRef<HTMLDivElement>(null);
+  const measureRef = useRef<HTMLDivElement>(null);
+  const [visibleCount, setVisibleCount] = useState(tags.length);
+
+  useLayoutEffect(() => {
+    const row = rowRef.current;
+    const measure = measureRef.current;
+    if (!row || !measure) return;
+    const calculate = () => {
+      const widths = [...measure.children].map(
+        (child) => (child as HTMLElement).getBoundingClientRect().width,
+      );
+      const gap = 4;
+      const fullWidth = widths.reduce(
+        (sum, width, index) => sum + width + (index ? gap : 0),
+        0,
+      );
+      if (fullWidth <= row.clientWidth) {
+        setVisibleCount(tags.length);
+        return;
+      }
+      const moreControlWidth = 68;
+      const available = Math.max(0, row.clientWidth - moreControlWidth - gap);
+      let used = 0;
+      let count = 0;
+      for (const width of widths) {
+        const next = used + (count ? gap : 0) + width;
+        if (next > available) break;
+        used = next;
+        count += 1;
+      }
+      setVisibleCount(Math.max(0, count));
+    };
+    calculate();
+    const observer = new ResizeObserver(calculate);
+    observer.observe(row);
+    return () => observer.disconnect();
+  });
+
+  if (!tags.length)
+    return <span className="text-[9px] text-zinc-700">None detected</span>;
+  const hiddenTags = tags.slice(visibleCount);
+  return (
+    <div ref={rowRef} className="relative flex min-w-0 items-center gap-1">
+      <div
+        ref={measureRef}
+        aria-hidden="true"
+        className="pointer-events-none fixed -left-[10000px] top-0 flex gap-1 opacity-0"
+      >
+        {tags.map((tag) => (
+          <span key={tag} className="shrink-0">
+            {renderTag(tag)}
+          </span>
+        ))}
+      </div>
+      {tags.slice(0, visibleCount).map((tag) => (
+        <span key={tag} className="shrink-0">
+          {renderTag(tag)}
+        </span>
+      ))}
+      {hiddenTags.length > 0 && (
+        <div className="group relative shrink-0">
+          <button
+            type="button"
+            style={{ fontSize: '8px', lineHeight: '12px' }}
+            className={`rounded px-0.5 font-normal hover:bg-white/5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-current ${moreClassName}`}
+            aria-haspopup="menu"
+          >
+            +{hiddenTags.length} more…
+          </button>
+          <div className="invisible absolute right-0 top-full z-[100] w-max max-w-64 translate-y-1 pt-2 opacity-0 transition group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100">
+            <div className="rounded-lg border border-white/10 bg-zinc-950 p-2 shadow-2xl">
+              <div className="flex max-w-60 flex-wrap gap-1" role="menu">
+                {hiddenTags.map((tag) => (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    key={tag}
+                    onClick={() => onSelect(tag)}
+                    className="rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-lime-300"
+                  >
+                    {renderTag(tag)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 const CURVE_TARGET = [0.02, 0.1, 0.25, 0.28, 0.17, 0.1, 0.05];
 const CURVE_BUCKET_WEIGHT = [0.7, 0.8, 0.9, 1, 1.2, 1.45, 1.75];
 function curveTargetFor(manaValue: number) {
@@ -112,8 +238,146 @@ const FUNCTIONAL_ROLE_TAGS = new Set([
   'cost reduction',
   'land',
 ]);
+const INCIDENTAL_THEME_TAGS = new Set([
+  'flying',
+  'first strike',
+  'double strike',
+  'deathtouch',
+  'haste',
+  'hexproof',
+  'indestructible',
+  'menace',
+  'reach',
+  'trample',
+  'vigilance',
+  'ward',
+  'flash',
+]);
 function isFunctionalRoleTag(tag: string) {
-  return FUNCTIONAL_ROLE_TAGS.has(tag);
+  return FUNCTIONAL_ROLE_TAGS.has(tag.trim().toLowerCase());
+}
+function isStrategicThemeTag(tag: string) {
+  const normalizedTag = tag.trim().toLowerCase();
+  return (
+    !isFunctionalRoleTag(normalizedTag) &&
+    !INCIDENTAL_THEME_TAGS.has(normalizedTag)
+  );
+}
+function engineFamilyForTag(tag: string) {
+  if (
+    tag === 'sacrifice' ||
+    tag === 'type-event: creature dies' ||
+    /^type-event: (?:artifact|creature|land|token|clue|food|treasure|blood|map|gold|powerstone|incubator) sacrificed$/.test(
+      tag,
+    )
+  )
+    return 'engine: sacrifice';
+  if (['token count', 'creature count'].includes(tag)) return `engine: ${tag}`;
+  if (
+    ['artifact count', 'treasure count', 'clue count', 'food count'].includes(
+      tag,
+    )
+  )
+    return `engine: ${tag}`;
+  if (['life gain', 'burn', 'drain'].includes(tag))
+    return tag === 'drain' ? 'engine: drain' : `engine: ${tag}`;
+  return tag;
+}
+function conciseVisibleTags(tags: string[]) {
+  const visible = new Set(tags);
+  if ([...visible].some((tag) => /^type-event: .+ sacrificed$/.test(tag)))
+    visible.delete('sacrifice');
+  const namedCountTags = ['treasure count', 'clue count', 'food count'].filter(
+    (tag) => visible.has(tag),
+  );
+  if (namedCountTags.length) {
+    visible.delete('artifact count');
+    visible.delete('token count');
+  }
+  const namedSacrificeTags = [
+    'clue',
+    'food',
+    'treasure',
+    'blood',
+    'map',
+    'gold',
+    'powerstone',
+    'incubator',
+  ].filter((type) => visible.has(`type-event: ${type} sacrificed`));
+  if (namedSacrificeTags.length) {
+    visible.delete('type-event: artifact sacrificed');
+    visible.delete('type-event: token sacrificed');
+  }
+  return [...visible];
+}
+function engineSignalsFor(
+  card: WorkspaceCard,
+  effects: CardEffect[] = extractCardEffects(card),
+): EngineSignals {
+  const text = oracleTextForTagging(card);
+  const emits = new Set<string>();
+  const listens = new Set<string>();
+  const sacrifice = sacrificeAmounts(card);
+  if ((sacrifice.amounts.get('creature') ?? 0) > 0) {
+    emits.add('creature-sacrificed');
+    emits.add('creature-dies');
+    emits.add('creature-ltb');
+  }
+  if ((sacrifice.amounts.get('token') ?? 0) > 0) {
+    emits.add('token-sacrificed');
+    emits.add('token-ltb');
+  }
+  if (/\bdestroy\b[^.\n]*\bcreatures?\b/.test(text)) {
+    emits.add('creature-dies');
+    emits.add('creature-ltb');
+  }
+  if (/\b(?:exile|return)\b[^.\n]*\bcreatures?\b/.test(text))
+    emits.add('creature-ltb');
+  if (
+    /\b(?:when|whenever|if)\b[^.\n]*\bcreatures?\b[^.\n]*\bdies?\b|\bcreature (?:card )?is put into [^.\n]*graveyard from the battlefield\b/.test(
+      text,
+    )
+  )
+    listens.add('creature-dies');
+  if (
+    /\b(?:when|whenever|if)\b[^.\n]*\b(?:player|you|opponent)\b[^.\n]*\bsacrifices?\b[^.\n]*\bcreatures?\b|\bwhenever you sacrifice\b[^.\n]*\bcreatures?\b/.test(
+      text,
+    )
+  )
+    listens.add('creature-sacrificed');
+  if (
+    /\b(?:when|whenever|if)\b[^.\n]*\btokens?\b[^.\n]*\bleaves? the battlefield\b/.test(
+      text,
+    )
+  )
+    listens.add('token-ltb');
+  if (
+    /\b(?:when|whenever|if)\b[^.\n]*\bcreatures?\b[^.\n]*\bleaves? the battlefield\b/.test(
+      text,
+    )
+  )
+    listens.add('creature-ltb');
+  effects.forEach((effect) => {
+    const signal =
+      effect.event === 'sacrificed'
+        ? `${effect.subject.kind}-sacrificed`
+        : effect.event === 'dies'
+          ? `${effect.subject.kind}-dies`
+          : effect.event === 'leaves-battlefield'
+            ? `${effect.subject.kind}-ltb`
+            : null;
+    if (!signal) return;
+    if (effect.direction === 'listens') listens.add(signal);
+    else if (['emits', 'creates', 'transforms'].includes(effect.direction))
+      emits.add(signal);
+  });
+  return { emits, listens };
+}
+function signalsConnect(first: EngineSignals, second: EngineSignals) {
+  return (
+    [...first.emits].some((signal) => second.listens.has(signal)) ||
+    [...first.listens].some((signal) => second.emits.has(signal))
+  );
 }
 function keyOf(card: WorkspaceCard) {
   return card.key ?? card.name;
@@ -123,6 +387,29 @@ function isBasicLand(card: WorkspaceCard) {
     /\bbasic\b.*\bland\b/i.test(card.cardData?.typeLine ?? '') ||
     /^(?:plains|island|swamp|mountain|forest|wastes|snow-covered (?:plains|island|swamp|mountain|forest))$/i.test(
       card.name,
+    )
+  );
+}
+function isSelfRecurringCreature(card: WorkspaceCard) {
+  const frontType = card.cardData?.typeLine?.split('//')[0] ?? '';
+  if (!/\bcreature\b/i.test(frontType)) return false;
+  const text = oracleTextForTagging(card);
+  const frontName = card.name.split('//')[0].trim().toLowerCase();
+  const escapedName = frontName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const returnsSelf = new RegExp(
+    `\\breturn (?:${escapedName}|this card|this creature|it)\\b[^.]*\\b(?:from (?:your|the) graveyard|to (?:your|its owner'?s) hand|to the battlefield)\\b`,
+  ).test(text);
+  const castsSelf = new RegExp(
+    `\\b(?:you may )?cast (?:${escapedName}|this card|this creature)\\b[^.]*\\bfrom (?:your|a) graveyard\\b`,
+  ).test(text);
+  return (
+    returnsSelf ||
+    castsSelf ||
+    /\b(?:escape|persist|undying)\b/.test(text) ||
+    Boolean(
+      card.cardData?.keywords?.some((keyword) =>
+        ['escape', 'persist', 'undying'].includes(keyword.toLowerCase()),
+      ),
     )
   );
 }
@@ -164,10 +451,16 @@ function priceOf(card: WorkspaceCard) {
           0),
   );
 }
-function popularityCutScore(card: WorkspaceCard) {
+function popularityCutScore(
+  card: WorkspaceCard,
+  contextualPopularity?: ContextualPopularity,
+) {
   const rank = card.cardData?.edhrecRank;
   if (!rank || rank < 1) return 0.5;
-  return Math.min(1, Math.log10(rank + 1) / Math.log10(25000));
+  const percentile = contextualPopularity
+    ? contextualPopularity.percentile
+    : Math.min(1, Math.max(0, (rank - 1) / 24999));
+  return Math.sqrt(percentile);
 }
 function subtypesOf(card?: WorkspaceCard) {
   const frontType = card?.cardData?.typeLine?.split('//')[0] ?? '';
@@ -181,13 +474,10 @@ function subtypesOf(card?: WorkspaceCard) {
 }
 function oracleTextForTagging(card?: WorkspaceCard) {
   const text = card?.cardData?.oracleText.toLowerCase() ?? '';
-  // Token reminder text describes an ability of the created token, not an
-  // ability or cost of the card creating it. For example, a Food reminder's
-  // "Sacrifice this artifact" must not make Gingerbread Cabin sacrifice itself.
-  return text.replace(
-    /\([^)]*\bsacrifice this (?:artifact|creature|permanent|token)[^)]*\)/g,
-    '',
-  );
+  // Parenthetical reminder text explains rules rather than adding effects to
+  // the card. Ignoring it prevents phrases such as protection's "can't be
+  // blocked" or Food's "sacrifice this artifact" from creating false tags.
+  return text.replace(/\([^)]*\)/g, '');
 }
 function cardHasOverload(card?: WorkspaceCard) {
   const text = oracleTextForTagging(card);
@@ -205,8 +495,15 @@ function overloadAffects(card: WorkspaceCard, resource: string) {
   const text = oracleTextForTagging(card);
   return new RegExp(`\\btarget [^.]*\\b${resource}\\b`).test(text);
 }
+const synergyTagCache = new WeakMap<
+  WorkspaceCard,
+  { knownTypesKey: string; tags: string[] }
+>();
 function synergyTags(card?: WorkspaceCard, knownTypes: string[] = []) {
   if (!card) return [];
+  const knownTypesKey = knownTypes.join('\u0000');
+  const cached = synergyTagCache.get(card);
+  if (cached?.knownTypesKey === knownTypesKey) return cached.tags;
   const tags = new Set<string>();
   const text = oracleTextForTagging(card);
   const typeFaces = (card.cardData?.typeLine ?? '').split(/\s+\/\/\s+/);
@@ -215,12 +512,13 @@ function synergyTags(card?: WorkspaceCard, knownTypes: string[] = []) {
   if (hasLandFace) tags.add('land');
   (card.cardData?.keywords?.length
     ? card.cardData.keywords.filter(
-        (keyword) => keyword.toLowerCase() !== 'double',
+        (keyword) =>
+          !['double', 'protection'].includes(keyword.toLowerCase()),
       )
     : FALLBACK_KEYWORDS.filter((keyword) =>
         new RegExp(`\\b${keyword.replace(' ', '\\s+')}\\b`, 'i').test(text),
       )
-  ).forEach((keyword) => tags.add(keyword));
+  ).forEach((keyword) => tags.add(keyword.trim().toLowerCase()));
   if (
     /\bdraws? (?:a|one|two|three|four|\d+) cards?\b|\bdraw cards equal\b|\bcard draw\b/.test(
       text,
@@ -345,15 +643,27 @@ function synergyTags(card?: WorkspaceCard, knownTypes: string[] = []) {
   if (/\bput (?:a|one|two|three|\d+) \+1\/\+1 counters?/.test(text))
     tags.add('+1/+1 counters');
   if (
-    /\b(?:return|put) [^.]*\bfrom (?:your|a|any|an opponent'?s|target player'?s) graveyard\b[^.]*(?:\bto|\bonto) (?:your hand|the battlefield)|\bgraveyard to (?:your hand|the battlefield)|\b(?:you may )?cast [^.]*\bfrom (?:your|a|any) graveyard\b|\bthis (?:card|creature|spell) may be cast from (?:your|a|any) graveyard\b/.test(
+    /\b(?:return|put) [^.]*\b(?:from|in) (?:your|a|any|an opponent'?s|target player'?s) graveyard\b[^.]*(?:\bto|\bon|\bonto) (?:(?:your hand|the battlefield)|(?:the )?top of (?:your|its owner'?s|that player'?s|their) library)|\bgraveyard to (?:your hand|the battlefield|the top of your library)|\b(?:put|placed) into (?:your|a) graveyard from the battlefield\b[^.]*\breturn (?:this card|this creature|it|[^.]+?)\b[^.]*(?:\bto|\bonto) (?:your hand|the battlefield|the top of your library)|\b(?:you may )?cast [^.]*\bfrom (?:your|a|any) graveyard\b|\bthis (?:card|creature|spell) may be cast from (?:your|a|any) graveyard\b/.test(
       text,
     )
   )
     tags.add('recursion');
+  const grantsDeathReturn =
+    /\b(?:target |another |enchanted |equipped )?creatures?(?: you control)?\b[^.\n]*(?:gains?|has|have)\b[^.\n]*\bwhen(?:ever)? (?:this|that) creature dies\b[^.\n]*\breturn (?:it|that card)\b[^.\n]*\b(?:to|onto) the battlefield\b/.test(
+      text,
+    );
+  if (grantsDeathReturn) {
+    tags.add('recursion');
+    tags.add('protection');
+  }
+  const forcesOtherPlayerSacrifice =
+    /\b(?:each player|each opponent|target (?:player|opponent)|an opponent|that player|its controller)\b[^.\n]*\bsacrifices?\b[^.\n]*\b(?:artifact|creature|enchantment|land|permanent|planeswalker|battle|token)s?\b/.test(
+      text,
+    );
   if (
     /\b(?:destroy|exile) (?:target|all|each)\b|\beach player (?:destroys|exiles)\b|deals? \d+ damage to any target/.test(
       text,
-    )
+    ) || forcesOtherPlayerSacrifice
   )
     tags.add('removal');
   const isCounterspell =
@@ -362,7 +672,7 @@ function synergyTags(card?: WorkspaceCard, knownTypes: string[] = []) {
     );
   if (isCounterspell) tags.add('counterspell');
   const grantsProtection =
-    /\b(?:target|another|creatures? you control|permanents? you control)\b[^.]*(?:indestructible|hexproof|protection from)/.test(
+    /\b(?:target|another|creatures? you control|permanents? you control)\b[^.]*(?:indestructible|hexproof|protection from)|\bregenerate target\b/.test(
       text,
     );
   if (isCounterspell || grantsProtection) tags.add('protection');
@@ -391,7 +701,7 @@ function synergyTags(card?: WorkspaceCard, knownTypes: string[] = []) {
     tags.add('burn');
   const isDrain = text.split(/\n+/).some(
     (segment) =>
-      /\b(?:opponent|opponents)\b[^.]*\b(?:lose|loses|lost)\b[^.]*\blife\b/.test(
+      /\b(?:opponent|opponents|target player)\b[^.]*\b(?:lose|loses|lost)\b[^.]*\blife\b/.test(
         segment,
       ) && /\b(?:gain|gains|gained)\b[^.]*\blife\b/.test(segment),
   );
@@ -404,10 +714,23 @@ function synergyTags(card?: WorkspaceCard, knownTypes: string[] = []) {
     )
   )
     tags.add('sacrifice');
+  // A token-LTB trigger is a broad payoff for token sacrifice: sacrificing a
+  // token necessarily makes it leave the battlefield, even though exile and
+  // bounce can satisfy the same trigger too. Give it the matching themes but
+  // no sacrifice amount, so it is classified as a payoff rather than an
+  // enabler (for example, Nadier's Nightblade).
+  const watchesTokensLeaveBattlefield =
+    /\b(?:when|whenever|if)\b[^.\n]*\b(?:one or more |a |another )?tokens?(?: you control)?\b[^.\n]*\bleaves? the battlefield\b/.test(
+      text,
+    );
+  if (watchesTokensLeaveBattlefield) {
+    tags.add('sacrifice');
+    tags.add('type-event: token sacrificed');
+  }
   const addTypeEvent = (type: string, event: string) =>
     tags.add(`type-event: ${type} ${event}`);
   const sacrificeSubjects = [
-    ...text.matchAll(/\bsacrifice\s+([^:.,;\n]+)/g),
+    ...text.matchAll(/\bsacrific(?:e|es)\s+([^:.,;\n]+)/g),
   ].map((match) => match[1].trim());
   const frontName = card.name.split('//')[0].trim().toLowerCase();
   const selfIsSacrificed = sacrificeSubjects.some(
@@ -523,7 +846,9 @@ function synergyTags(card?: WorkspaceCard, knownTypes: string[] = []) {
     if (new RegExp(`\\b(?:${escaped}|${plurals})\\b`, 'i').test(text))
       tags.add(`type: ${type}`);
   });
-  return [...tags];
+  const result = [...tags];
+  synergyTagCache.set(card, { knownTypesKey, tags: result });
+  return result;
 }
 function isModalDoubleFacedCard(card: WorkspaceCard) {
   const typeFaces = (card.cardData?.typeLine ?? '').split(/\s+\/\/\s+/);
@@ -657,9 +982,36 @@ function manaRampOutputAmount(card: WorkspaceCard) {
     five: 5,
     six: 6,
   };
-  const amounts = [...text.matchAll(/\badd (one|two|three|four|five|six|\d+) mana\b/g)]
-    .map((match) => numberWords[match[1]] ?? Number(match[1]))
-    .filter(Number.isFinite);
+  const amounts: number[] = [];
+  text.split(/\n+/).forEach((segment) => {
+    if (!/\badd\b[^.]*\bmana\b|\badd\s+\{/.test(segment)) return;
+    const wordAmount = segment.match(
+      /\badd (one|two|three|four|five|six|\d+) mana\b/,
+    );
+    const symbolAmount = [...segment.matchAll(/\badd\s+((?:\{[^}]+\})+)/g)]
+      .map((match) => match[1].match(/\{[^}]+\}/g)?.length ?? 0)
+      .reduce((maximum, count) => Math.max(maximum, count), 0);
+    const grossOutput = Math.max(
+      wordAmount
+        ? (numberWords[wordAmount[1]] ?? Number(wordAmount[1]))
+        : 0,
+      symbolAmount,
+      /\badd (?:a|one) mana of any (?:color|type)\b/.test(segment) ? 1 : 0,
+    );
+    const activationCostText = segment.includes(':')
+      ? segment.slice(0, segment.indexOf(':'))
+      : '';
+    const manaCost = [...activationCostText.matchAll(/\{([^}]+)\}/g)].reduce(
+      (total, match) => {
+        const symbol = match[1].toUpperCase();
+        if (symbol === 'T' || symbol === 'Q' || symbol === 'X') return total;
+        if (/^\d+$/.test(symbol)) return total + Number(symbol);
+        return total + 1;
+      },
+      0,
+    );
+    if (grossOutput > 0) amounts.push(Math.max(0, grossOutput - manaCost));
+  });
   const landAmount = text.match(
     /\bput (?:up to )?(a|one|two|three|four|\d+) [^.]*lands?[^.]*onto the battlefield\b/,
   );
@@ -830,15 +1182,17 @@ function repeatabilityForSynergy(card: WorkspaceCard, tag: string) {
         'combat damage': /\bcombat damage\b|\bdouble strike\b|\btrample\b|\bcan'?t be blocked\b|\bunblockable\b|\b(?:double|triple)\b[^.]*\bdamage\b/,
         'impulse draw': /\bexile\b[^.]*\btop\b|\byou may (?:play|cast)\b/,
         '+1/+1 counters': /\b\+1\/\+1 counters?\b/,
-        recursion: /\bgraveyard\b[^.]*\b(?:hand|battlefield)\b|\breturn\b[^.]*\bgraveyard\b/,
-        removal: /\b(?:destroy|exile) (?:target|all|each)\b|\beach player (?:destroys|exiles)\b|\bdamage to any target\b/,
+        recursion:
+          /\bgraveyard\b[^.]*\b(?:hand|battlefield|top of [^.]*library)\b|\b(?:return|put)\b[^.]*\bgraveyard\b|\bcast\b[^.]*\bfrom (?:your|a|any) graveyard\b/,
+        removal:
+          /\b(?:destroy|exile) (?:target|all|each)\b|\beach player (?:destroys|exiles)\b|\bdamage to any target\b|\b(?:each player|each opponent|target (?:player|opponent)|an opponent|that player|its controller)\b[^.\n]*\bsacrifices?\b[^.\n]*\b(?:artifact|creature|enchantment|land|permanent|planeswalker|battle|token)s?\b/,
         counterspell:
           /\bcounter (?:target|all|each|that) [^.]*\b(?:spells?|abilit(?:y|ies))\b|\bwhenever you counter\b|\bspells? (?:is|are|was|were) countered\b/,
         'life gain': /\b(?:gain|gains|gained)\b[^.]*\blife\b|\blifelink\b/,
         burn:
           /\bdeals?\b[^.]*\bdamage\b|\b(?:opponent|opponents)\b[^.]*\b(?:lose|loses|lost)\b[^.]*\blife\b/,
         drain:
-          /\b(?:opponent|opponents)\b[^.]*\b(?:lose|loses|lost)\b[^.]*\blife\b[^.]*(?:gain|gains|gained)\b[^.]*\blife\b|\b(?:gain|gains|gained)\b[^.]*\blife\b[^.]*\b(?:opponent|opponents)\b[^.]*\b(?:lose|loses|lost)\b[^.]*\blife\b/,
+          /\b(?:opponent|opponents|target player)\b[^.]*\b(?:lose|loses|lost)\b[^.]*\blife\b[^.]*(?:gain|gains|gained)\b[^.]*\blife\b|\b(?:gain|gains|gained)\b[^.]*\blife\b[^.]*\b(?:opponent|opponents|target player)\b[^.]*\b(?:lose|loses|lost)\b[^.]*\blife\b/,
         discard: /\bdiscards?\b/,
       };
       if (tagPatterns[tag]?.test(segment)) return true;
@@ -874,7 +1228,11 @@ function repeatabilityForSynergy(card: WorkspaceCard, tag: string) {
     const recurringTrigger =
       /\b(?:at the beginning of|whenever|each (?:turn|upkeep|end step|combat)|once each turn)\b/.test(
         segment,
-      );
+      ) && !/\bat the beginning of the next\b/.test(segment);
+    const reusableGraveyardCast =
+      tag === 'recursion' &&
+      /\b(?:you may )?cast\b[^.]*\bfrom (?:your|a) graveyard\b/.test(segment) &&
+      !/\bonly once (?:each|per) turn\b/.test(segment);
     const sacrificesSelf = new RegExp(
       `\\bsacrifice (?:this (?:permanent|card|creature|artifact|land|token)|${escapedName})\\b`,
     ).test(segment);
@@ -927,6 +1285,7 @@ function repeatabilityForSynergy(card: WorkspaceCard, tag: string) {
     return {
       repeatable:
       recurringTrigger ||
+      reusableGraveyardCast ||
       reusableActivation ||
       continuousCountEffect ||
       continuousGeneralEffect,
@@ -988,6 +1347,20 @@ function lifeScalingBonus(card: WorkspaceCard, tag: string) {
   if (tag === 'burn') return scalesLifeLoss ? 0.5 : 0;
   return scalesLifeGain || scalesLifeLoss ? 0.5 : 0;
 }
+function recursionDestinationBonus(card: WorkspaceCard, tag: string) {
+  if (tag !== 'recursion') return 0;
+  const text = oracleTextForTagging(card);
+  const movesFromGraveyardToBattlefield = text.split(/\n+/).some(
+    (ability) =>
+      /\b(?:return|put)\b[^.]*\b(?:from|in) (?:your|a|any|target player'?s|an opponent'?s) graveyard\b[^.]*(?:\bto|\bonto) the battlefield\b/.test(
+        ability,
+      ) ||
+      /\b(?:return|put)\b[^.]*\bgraveyard\b[^.]*(?:\bto|\bonto) the battlefield\b/.test(
+        ability,
+      ),
+  );
+  return movesFromGraveyardToBattlefield ? 0.5 : 0;
+}
 function tagModifier(card: WorkspaceCard, tag: string) {
   const countAmount = countSynergyProductionAmount(card, tag);
   const rampAmount = tag === 'mana ramp' ? manaRampOutputAmount(card) : 0;
@@ -1018,8 +1391,13 @@ function tagModifier(card: WorkspaceCard, tag: string) {
   const multiUseBonus = timing.multiUsePerTurn ? 0.25 : 0;
   const instantSpeedBonus = timing.instantSpeed ? 0.25 : 0;
   const scalingBonus = lifeScalingBonus(card, tag);
+  const destinationBonus = recursionDestinationBonus(card, tag);
   const modifierBonus =
-    repeatabilityBonus + multiUseBonus + instantSpeedBonus + scalingBonus;
+    repeatabilityBonus +
+    multiUseBonus +
+    instantSpeedBonus +
+    scalingBonus +
+    destinationBonus;
   const baseLabel =
     sacrificeAmount > 0
       ? 'enabler'
@@ -1035,13 +1413,14 @@ function tagModifier(card: WorkspaceCard, tag: string) {
   return {
     amount,
     amountLabel:
-      tag === 'mana ramp' ? 'estimated mana-equivalent per turn' : 'relevant item',
-    applied: amount > 0 || repeatable || scalingBonus > 0,
+      tag === 'mana ramp' ? 'estimated net mana-equivalent' : 'relevant item',
+    applied: amount > 0 || repeatable || scalingBonus > 0 || destinationBonus > 0,
     quantityBonus,
     repeatabilityBonus,
     multiUseBonus,
     instantSpeedBonus,
     scalingBonus,
+    destinationBonus,
     modifierBonus,
     label: repeatable ? `repeatable ${baseLabel}` : baseLabel,
     repeatable,
@@ -1050,7 +1429,60 @@ function tagModifier(card: WorkspaceCard, tag: string) {
     value: Math.min(3, 1 + modifierBonus),
   };
 }
+
+function roleQualityModifier(card: WorkspaceCard, role: RoleName) {
+  const roleTags: Record<RoleName, string[]> = {
+    Tutor: ['tutor'],
+    'Board wipe': ['removal'],
+    Removal: ['removal'],
+    'Card draw': ['card draw'],
+    'Mana ramp': ['mana ramp', 'cost reduction'],
+    Protection: ['protection', 'counterspell'],
+    Recursion: ['recursion'],
+    Land: ['land'],
+  };
+  return Math.max(
+    1,
+    ...roleTags[role].map((tag) => tagModifier(card, tag).value),
+  );
+}
 type SynergyRole = 'producer' | 'enabler' | 'payoff' | 'neutral';
+function creatureTypeSynergyRoles(card: WorkspaceCard, tag: string) {
+  const type = tag.startsWith('type: ') ? tag.slice(6) : '';
+  if (!type) return { enabler: false, payoff: false };
+  const text = oracleTextForTagging(card);
+  const escaped = type.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const plural = type.endsWith('f')
+    ? `${type.slice(0, -1)}ves`
+    : type.endsWith('y')
+      ? `${type.slice(0, -1)}ies`
+      : `${type}s`;
+  const typePattern = `(?:${escaped}|${plural})`;
+  const isMember =
+    subtypesOf(card).includes(type) ||
+    /\bchangeling\b|\bis every creature type\b/.test(text);
+  const createsType = new RegExp(
+    `\\bcreat(?:e|es)\\b[^.]*\\b${typePattern}\\b[^.]*\\bcreature tokens?\\b|\\bcreat(?:e|es)\\b[^.]*\\bcreature tokens?\\b[^.]*\\b${typePattern}\\b`,
+  ).test(text);
+  const grantsType = new RegExp(
+    `\\b(?:becomes?|are)\\b[^.]*\\b${typePattern}\\b|\\b${typePattern}\\b in addition to (?:its|their) other types`,
+  ).test(text);
+  const payoff = [
+    `\\b(?:other |each |target )?${typePattern}\\b[^.]*(?:get|get|gets|have|has|gain|gains|cost|costs|can'?t|may)`,
+    `\\b(?:when|whenever|if)\\b[^.]*\\b${typePattern}\\b`,
+    `\\b(?:for each|number of)\\b[^.]*\\b${typePattern}\\b`,
+    `\\b${typePattern}\\b[^.]*(?:you control|enters?|dies?|attacks?|deals? combat damage)`,
+    `\\b(?:sacrifice|reveal|search [^.]* for)\\b[^.]*\\b${typePattern}\\b`,
+    `\\b(?:regenerate|protect)\\b[^.]*\\b${typePattern}\\b`,
+  ].some((pattern) => new RegExp(pattern).test(text));
+  return {
+    // A creature supplies its tribe, while cards that create or grant the type
+    // are also tribal enablers. Scoring later scales this by the tribe's actual
+    // prevalence so a small package cannot rival the deck's dominant engine.
+    enabler: isMember || createsType || grantsType,
+    payoff,
+  };
+}
 function drainRoles(card: WorkspaceCard) {
   const text = oracleTextForTagging(card);
   const gainTrigger =
@@ -1064,7 +1496,7 @@ function drainRoles(card: WorkspaceCard) {
       text,
     );
   const lossEffect =
-    /\b(?:(?:target|each|an) opponent|your opponents?) loses? (?:that much|x|\d+|one|two|three|four|five|a) life\b/.test(
+    /\b(?:(?:target|each|an) opponent|your opponents?|target player) loses? (?:that much|x|\d+|one|two|three|four|five|a) life\b/.test(
       text,
     );
   const converter =
@@ -1077,6 +1509,10 @@ function drainRoles(card: WorkspaceCard) {
 }
 function synergyRole(card: WorkspaceCard, tag: string): SynergyRole {
   const text = oracleTextForTagging(card);
+  if (tag.startsWith('type: ')) {
+    const roles = creatureTypeSynergyRoles(card, tag);
+    return roles.payoff ? 'payoff' : roles.enabler ? 'enabler' : 'neutral';
+  }
   if (
     [
       'artifact count',
@@ -1133,6 +1569,7 @@ function synergyRole(card: WorkspaceCard, tag: string): SynergyRole {
 }
 function synergyPreviewRoles(card: WorkspaceCard, tag: string) {
   const text = oracleTextForTagging(card);
+  if (tag.startsWith('type: ')) return creatureTypeSynergyRoles(card, tag);
   const producer = countSynergyProductionAmount(card, tag) > 0;
   const enabler = sacrificeSynergyAmount(card, tag) > 0;
   const countPayoffPatterns: Record<string, RegExp> = {
@@ -1251,6 +1688,8 @@ function SynergyPreviewCard({
   );
 }
 function displayTag(tag: string) {
+  if (tag.startsWith('engine: '))
+    return `${tag.slice(8).replace(/\b\w/g, (letter) => letter.toUpperCase())} Engine`;
   if (tag.startsWith('type: '))
     return `Type: ${tag.slice(6).replace(/\b\w/g, (letter) => letter.toUpperCase())}`;
   if (tag.startsWith('type-event: ')) {
@@ -1442,6 +1881,7 @@ export default function CutWorkspace({
   cards,
   cardCount,
   target,
+  contextualPopularity,
   onCardQuantityChange,
   onBack,
 }: Props) {
@@ -1537,10 +1977,17 @@ export default function CutWorkspace({
           !card.cardData?.typeLine?.startsWith('Basic Land'),
       )
       .forEach((card) =>
-        synergyTags(card, knownTypes)
+        conciseVisibleTags(synergyTags(card, knownTypes))
           .filter(
             (tag) =>
-              !ignoredSynergies.has(tag) && !isFunctionalRoleTag(tag),
+              !ignoredSynergies.has(tag) &&
+              !isFunctionalRoleTag(tag) &&
+              (!tag.startsWith('type: ') ||
+                cards.some(
+                  (candidate) =>
+                    synergyTags(candidate, knownTypes).includes(tag) &&
+                    synergyPreviewRoles(candidate, tag).payoff,
+                )),
           )
           .forEach((tag) =>
             counts.set(tag, (counts.get(tag) ?? 0) + card.quantity),
@@ -1561,11 +2008,38 @@ export default function CutWorkspace({
     const eligible = cards.filter((card) => !isBasicLand(card));
     const frequency = new Map<string, number>();
     eligible.forEach((card) =>
-      synergyTags(card, knownTypes)
+      conciseVisibleTags(synergyTags(card, knownTypes))
         .filter((tag) => !ignoredSynergies.has(tag))
         .forEach((tag) =>
           frequency.set(tag, (frequency.get(tag) ?? 0) + card.quantity),
         ),
+    );
+    const engineFamilyFrequency = new Map<string, number>();
+    eligible.forEach((card) => {
+      const families = new Set(
+        synergyTags(card, knownTypes)
+          .filter(
+            (tag) =>
+              !ignoredSynergies.has(tag) && isStrategicThemeTag(tag),
+          )
+          .map(engineFamilyForTag),
+      );
+      families.forEach((family) =>
+        engineFamilyFrequency.set(
+          family,
+          (engineFamilyFrequency.get(family) ?? 0) + card.quantity,
+        ),
+      );
+    });
+    const strongestEngineFamilyFrequency = Math.max(
+      1,
+      ...engineFamilyFrequency.values(),
+    );
+    const strongestThemeFrequency = Math.max(
+      1,
+      ...[...frequency.entries()]
+        .filter(([tag]) => isStrategicThemeTag(tag))
+        .map(([, count]) => count),
     );
     const rolesByTag = new Map<string, Set<SynergyRole>>();
     eligible.forEach((card) =>
@@ -1573,11 +2047,27 @@ export default function CutWorkspace({
         .filter((tag) => !ignoredSynergies.has(tag))
         .forEach((tag) => {
           const roles = rolesByTag.get(tag) ?? new Set<SynergyRole>();
-          roles.add(synergyRole(card, tag));
+          const previewRoles = synergyPreviewRoles(card, tag);
+          if (previewRoles.enabler) roles.add('enabler');
+          if (previewRoles.payoff) roles.add('payoff');
+          if (!previewRoles.enabler && !previewRoles.payoff)
+            roles.add(synergyRole(card, tag));
           rolesByTag.set(tag, roles);
         }),
     );
     const contextCards = eligible.filter((card) => card.name !== commander);
+    const structuredEffectsByCard = new Map(
+      eligible.map((card) => [keyOf(card), extractCardEffects(card)] as const),
+    );
+    const engineSignalsByCard = new Map(
+      eligible.map(
+        (card) =>
+          [
+            keyOf(card),
+            engineSignalsFor(card, structuredEffectsByCard.get(keyOf(card))),
+          ] as const,
+      ),
+    );
     const activeTagsFor = (card: WorkspaceCard) =>
       synergyTags(card, knownTypes).filter(
         (tag) => !ignoredSynergies.has(tag),
@@ -1695,6 +2185,11 @@ export default function CutWorkspace({
     });
     const commanderCard = cards.find((card) => card.name === commander);
     const commanderTags = commanderSynergyTags;
+    const commanderSupportsSacrifice = [
+      'sacrifice',
+      'type-event: creature sacrificed',
+      'type-event: creature dies',
+    ].some((tag) => commanderTags.has(tag));
     return eligible.map((card) => {
       const bucket = Math.max(
         0,
@@ -1759,16 +2254,82 @@ export default function CutWorkspace({
       const allTags = synergyTags(card, knownTypes);
       const tags = allTags.filter((tag) => !ignoredSynergies.has(tag));
       const thematicTags = tags.filter((tag) => !isFunctionalRoleTag(tag));
+      const strategicThemeTags = thematicTags.filter(isStrategicThemeTag);
+      const manaInvestment = Math.max(1, card.cardData?.manaValue ?? 0);
+      const efficiencyComparisons =
+        card.cardData?.type === 'Land'
+          ? []
+          : tags
+              .filter(
+                (tag) =>
+                  tag !== 'land' &&
+                  !tag.startsWith('type: ') &&
+                  (isFunctionalRoleTag(tag) || isStrategicThemeTag(tag)),
+              )
+              .flatMap((tag) => {
+                const peers = eligible.filter((other) => {
+                  if (keyOf(other) === keyOf(card)) return false;
+                  if (other.cardData?.type === 'Land') return false;
+                  return synergyTags(other, knownTypes)
+                    .filter((otherTag) => !ignoredSynergies.has(otherTag))
+                    .includes(tag);
+                });
+                if (!peers.length) return [];
+                const efficiencyRate =
+                  tagModifier(card, tag).value / manaInvestment;
+                const peerRate =
+                  peers.reduce(
+                    (sum, peer) =>
+                      sum +
+                      tagModifier(peer, tag).value /
+                        Math.max(1, peer.cardData?.manaValue ?? 0),
+                    0,
+                  ) / peers.length;
+                const protection = Math.min(
+                  1,
+                  Math.max(0, efficiencyRate / Math.max(0.01, peerRate) - 1),
+                );
+                return [
+                  {
+                    tag,
+                    protection,
+                    efficiencyRate,
+                    peerRate,
+                    peerCount: peers.length,
+                    manaInvestment,
+                    quality: tagModifier(card, tag).value,
+                  },
+                ];
+              });
+      const bestEfficiency = efficiencyComparisons.sort(
+        (first, second) => second.protection - first.protection,
+      )[0];
+      const efficiencyProtection = bestEfficiency?.protection ?? 0;
       const supportByTag = new Map(
-        thematicTags.map((tag) => [
-          tag,
-          Math.min(
-            1,
-            (Math.max(0, (frequency.get(tag) ?? 0) - card.quantity) /
-              Math.max(4, cardCount * 0.12)) *
-              tagModifier(card, tag).value,
-          ),
-        ]),
+        strategicThemeTags.map((tag) => {
+          if (tag.startsWith('type: ')) {
+            const cardTypeRoles = synergyPreviewRoles(card, tag);
+            const hasComplement = eligible.some((other) => {
+              if (keyOf(other) === keyOf(card)) return false;
+              if (!synergyTags(other, knownTypes).includes(tag)) return false;
+              const otherRoles = synergyPreviewRoles(other, tag);
+              return (
+                (cardTypeRoles.enabler && otherRoles.payoff) ||
+                (cardTypeRoles.payoff && otherRoles.enabler)
+              );
+            });
+            if (!hasComplement) return [tag, 0] as const;
+          }
+          return [
+            tag,
+            Math.min(
+              1,
+              (Math.max(0, (frequency.get(tag) ?? 0) - card.quantity) /
+                Math.max(4, cardCount * 0.12)) *
+                tagModifier(card, tag).value,
+            ),
+          ] as const;
+        }),
       );
       const strongestSupportTags = [...supportByTag.entries()].sort(
         ([firstTag, first], [secondTag, second]) =>
@@ -1787,7 +2348,7 @@ export default function CutWorkspace({
       );
       const complementarySupport = Math.max(
         0,
-        ...thematicTags.map((tag) => {
+        ...strategicThemeTags.map((tag) => {
           const cardRole = synergyRole(card, tag);
           const complementaryRoleExists = [...(rolesByTag.get(tag) ?? [])].some(
             (otherRole) => rolesComplement(cardRole, otherRole),
@@ -1797,7 +2358,7 @@ export default function CutWorkspace({
       );
       const payoffSupport = Math.max(
         0,
-        ...thematicTags.map((tag) => {
+        ...strategicThemeTags.map((tag) => {
           if (!synergyPreviewRoles(card, tag).payoff) return 0;
           const producerCount = eligible
             .filter((other) => keyOf(other) !== keyOf(card))
@@ -1809,6 +2370,13 @@ export default function CutWorkspace({
           return Math.min(1, producerCount / Math.max(4, cardCount * 0.08));
         }),
       );
+      const selfRecurringSacrificeFodder = isSelfRecurringCreature(card);
+      const sacrificeRecursionSupport = selfRecurringSacrificeFodder
+        ? Math.min(
+            1,
+            sacrificeThemeCount / Math.max(4, cardCount * 0.08),
+          )
+        : 0;
       const cardRoleOptions = roleFaceOptions(card, knownTypes);
       const cardRoles = new Set(cardRoleOptions.flatMap((roles) => [...roles]));
       const matchingRoles = roleTargets.filter((role) =>
@@ -1819,7 +2387,7 @@ export default function CutWorkspace({
           count < role.minimum
             ? 1
             : count <= role.maximum
-              ? 0.85
+              ? 1
               : Math.max(0.3, (role.maximum / count) * 0.75);
         const availableFaces = cardRoleOptions.filter((roles) =>
           roles.has(role.name),
@@ -1828,11 +2396,13 @@ export default function CutWorkspace({
           ...role,
           count,
           score,
+          quality: roleQualityModifier(card, role.name),
           modalShare: availableFaces / cardRoleOptions.length,
         };
       });
       const strongestRole = matchingRoles.sort(
-        (first, second) => second.score - first.score,
+        (first, second) =>
+          second.score - first.score || second.quality - first.quality,
       )[0];
       const roleScoreByName = new Map(
         matchingRoles.map((role) => [role.name, role.score]),
@@ -1853,54 +2423,278 @@ export default function CutWorkspace({
             0,
           ) / cardRoleOptions.length
         : (strongestRole?.score ?? 0);
-      const sharedCommanderTags = thematicTags.filter(
-        (tag) => commanderTags.has(tag) && !isFunctionalRoleTag(tag),
-      );
+      const sharedCommanderTags = strategicThemeTags.filter((tag) => {
+        if (!commanderTags.has(tag) || isFunctionalRoleTag(tag)) return false;
+        if (!tag.startsWith('type: ') || !commanderCard) return true;
+        const cardTypeRoles = synergyPreviewRoles(card, tag);
+        const commanderTypeRoles = synergyPreviewRoles(commanderCard, tag);
+        return (
+          (cardTypeRoles.enabler && commanderTypeRoles.payoff) ||
+          (cardTypeRoles.payoff && commanderTypeRoles.enabler)
+        );
+      });
       const commanderHasComplement = commanderCard
-        ? sharedCommanderTags.some((tag) =>
-            rolesComplement(
-              synergyRole(card, tag),
-              synergyRole(commanderCard, tag),
-            ),
-          )
+        ? sharedCommanderTags.some((tag) => {
+            const cardRoles = synergyPreviewRoles(card, tag);
+            const commanderRoles = synergyPreviewRoles(commanderCard, tag);
+            return (
+              (cardRoles.enabler && commanderRoles.payoff) ||
+              (cardRoles.payoff && commanderRoles.enabler) ||
+              rolesComplement(
+                synergyRole(card, tag),
+                synergyRole(commanderCard, tag),
+              )
+            );
+          })
         : false;
-      const commanderConnection = sharedCommanderTags.length
+      const sharedTagCommanderConnection = sharedCommanderTags.length
         ? Math.min(
             1,
-            0.65 +
+            (0.65 +
               Math.min(0.3, (sharedCommanderTags.length - 1) * 0.15) +
-              (commanderHasComplement ? 0.2 : 0),
+              (commanderHasComplement ? 0.2 : 0)) *
+              Math.max(
+                ...sharedCommanderTags.map(
+                  (tag) =>
+                    (frequency.get(tag) ?? 0) / strongestThemeFrequency,
+                ),
+              ),
           )
         : 0;
-      const boostedTagCount = thematicTags.filter((tag) =>
+      const sacrificeCommanderConnection =
+        selfRecurringSacrificeFodder && commanderSupportsSacrifice ? 0.9 : 0;
+      const commanderConnection = Math.max(
+        sharedTagCommanderConnection,
+        sacrificeCommanderConnection,
+      );
+      const boostedTagCount = strategicThemeTags.filter((tag) =>
         boostedSynergies.has(tag),
       ).length;
       const boostedTagBonus = Math.min(0.4, boostedTagCount * 0.2);
-      const effectiveSynergy = Math.min(
+      const themeSupport = Math.min(1, support + boostedTagBonus);
+      const themeMismatch = strategicThemeTags.length
+        ? 1 - themeSupport
+        : 0;
+      const rawRoleSurplus = matchingRoles.length ? 1 - roleCoverage : 1;
+      // Modifiers represent how much work a role card can perform, not extra
+      // copies toward the role target. Quality therefore softens only the cut
+      // pressure once that role is overfilled; it never changes the role count.
+      const roleQualityModifierValue = strongestRole?.quality ?? 1;
+      const roleSurplus = rawRoleSurplus / roleQualityModifierValue;
+      const cardEngineSignals = engineSignalsByCard.get(keyOf(card))!;
+      const directEnginePartnerCount = eligible
+        .filter((candidate) => keyOf(candidate) !== keyOf(card))
+        .filter((candidate) =>
+          signalsConnect(
+            cardEngineSignals,
+            engineSignalsByCard.get(keyOf(candidate))!,
+          ),
+        )
+        .reduce((sum, candidate) => sum + candidate.quantity, 0);
+      const graphEngineSupport = Math.min(
+        1,
+        directEnginePartnerCount / Math.max(4, cardCount * 0.08),
+      );
+      const engineApplicable =
+        graphEngineSupport > 0 || strategicThemeTags.some((tag) => {
+        const roles = synergyPreviewRoles(card, tag);
+        return roles.enabler || roles.payoff;
+      });
+      const engineSupport = Math.min(
         1,
         Math.max(
-          support,
-          roleCoverage,
+          complementarySupport,
           payoffSupport,
-          commanderConnection,
-        ) + boostedTagBonus,
+          sacrificeRecursionSupport,
+          graphEngineSupport,
+        ),
       );
-      const synergy = 1 - effectiveSynergy;
+      const engineFamilies = [
+        ...new Set(strategicThemeTags.map(engineFamilyForTag)),
+      ];
+      const familyTagsFor = (candidate: WorkspaceCard, family: string) =>
+        synergyTags(candidate, knownTypes).filter(
+          (tag) =>
+            !ignoredSynergies.has(tag) &&
+            isStrategicThemeTag(tag) &&
+            engineFamilyForTag(tag) === family,
+        );
+      const familyRolesFor = (candidate: WorkspaceCard, family: string) => {
+        const roles = familyTagsFor(candidate, family).map((tag) =>
+          synergyPreviewRoles(candidate, tag),
+        );
+        return {
+          enabler: roles.some((role) => role.enabler),
+          payoff: roles.some((role) => role.payoff),
+        };
+      };
+      const enginePrevalence = Math.min(
+        1,
+        Math.max(
+          0,
+          ...engineFamilies.map(
+            (family) =>
+              (engineFamilyFrequency.get(family) ?? 0) /
+              strongestEngineFamilyFrequency,
+          ),
+        ),
+      );
+      const engineBalanceByTag = engineFamilies.map((tag) => {
+        const cardEngineRoles = familyRolesFor(card, tag);
+        if (!cardEngineRoles.enabler && !cardEngineRoles.payoff)
+          return { tag, balance: 0, enablers: 0, payoffs: 0, efficiency: 0 };
+        const matchingEngineCards = eligible.filter((candidate) =>
+          familyTagsFor(candidate, tag).length,
+        );
+        const enablers = matchingEngineCards.reduce(
+          (sum, candidate) =>
+            sum +
+            (familyRolesFor(candidate, tag).enabler
+              ? candidate.quantity
+              : 0),
+          0,
+        );
+        const payoffs = matchingEngineCards.reduce(
+          (sum, candidate) =>
+            sum +
+            (familyRolesFor(candidate, tag).payoff
+              ? candidate.quantity
+              : 0),
+          0,
+        );
+        // Two enablers per payoff is a healthy default engine shape. Once one
+        // side exceeds what the other can use, cards on the surplus side lose
+        // protection instead of being sheltered merely for sharing the tag.
+        const supplyBalance =
+          cardEngineRoles.enabler && cardEngineRoles.payoff
+            ? 1
+            : cardEngineRoles.enabler
+              ? Math.min(1, (payoffs * 2) / Math.max(1, enablers))
+              : Math.min(1, enablers / Math.max(1, payoffs * 2));
+        const comparableCards = matchingEngineCards.filter((candidate) => {
+          const roles = familyRolesFor(candidate, tag);
+          return (
+            (cardEngineRoles.enabler && roles.enabler) ||
+            (cardEngineRoles.payoff && roles.payoff)
+          );
+        });
+        const averageQuality = comparableCards.length
+          ? comparableCards.reduce(
+              (sum, candidate) =>
+                sum +
+                Math.max(
+                  1,
+                  ...familyTagsFor(candidate, tag).map(
+                    (memberTag) => tagModifier(candidate, memberTag).value,
+                  ),
+                ) *
+                  candidate.quantity,
+              0,
+            ) /
+            comparableCards.reduce(
+              (sum, candidate) => sum + candidate.quantity,
+              0,
+            )
+          : 1;
+        const efficiency = Math.min(
+          1,
+          Math.max(
+            0.25,
+            Math.max(
+              1,
+              ...familyTagsFor(card, tag).map(
+                (memberTag) => tagModifier(card, memberTag).value,
+              ),
+            ) / Math.max(0.01, averageQuality),
+          ),
+        );
+        return {
+          tag,
+          balance: supplyBalance * efficiency,
+          enablers,
+          payoffs,
+          efficiency,
+        };
+      });
+      const contributingEngineBalances = engineBalanceByTag
+        .filter((entry) => entry.balance > 0)
+        .sort((first, second) => second.balance - first.balance)
+        .slice(0, 3);
+      const strongestEngineBalance = contributingEngineBalances[0];
+      const engineBalance = Math.min(
+        1,
+        (contributingEngineBalances[0]?.balance ?? 0) +
+          (contributingEngineBalances[1]?.balance ?? 0) * 0.25 +
+          (contributingEngineBalances[2]?.balance ?? 0) * 0.1,
+      );
+      const effectiveEngineBalance = engineBalance || (graphEngineSupport > 0 ? 1 : 0);
+      const effectiveEnginePrevalence = engineFamilies.length
+        ? enginePrevalence
+        : graphEngineSupport;
+      const engineProtection = engineApplicable
+        ? engineSupport * effectiveEnginePrevalence * effectiveEngineBalance
+        : 0;
       const cardValue = priceOf(card) * card.quantity;
       const priceIsActive = budget !== null;
       const price = priceIsActive
         ? Math.min(1, cardValue / Math.max(0.01, budget))
         : 0;
-      const popularity = popularityCutScore(card);
+      const popularityContext =
+        contextualPopularity?.get(keyOf(card)) ??
+        contextualPopularity?.get(card.cardData?.nameKey ?? card.name.toLowerCase());
+      const popularity = popularityCutScore(card, popularityContext);
+      const synergyBeforeProtections = themeMismatch * 0.3 + roleSurplus * 0.7;
+      const engineProtectionRate = engineProtection * 0.25;
+      const efficiencyProtectionRate = efficiencyProtection * 0.15;
+      const commanderProtectionRate = commanderConnection * 0.3;
+      const uncappedCombinedProtection =
+        1 -
+        (1 - engineProtectionRate) *
+          (1 - efficiencyProtectionRate) *
+          (1 - commanderProtectionRate);
+      const combinedProtectionRate = Math.min(
+        0.5,
+        uncappedCombinedProtection,
+      );
+      const synergy = synergyBeforeProtections * (1 - combinedProtectionRate);
+      const rawEngineSynergyReduction =
+        synergyBeforeProtections * engineProtectionRate;
+      const rawEfficiencySynergyReduction =
+        synergyBeforeProtections *
+        (1 - engineProtectionRate) *
+        efficiencyProtectionRate;
+      const rawCommanderSynergyReduction =
+        synergyBeforeProtections *
+        (1 - engineProtectionRate) *
+        (1 - efficiencyProtectionRate) *
+        commanderProtectionRate;
+      const protectionDisplayScale = uncappedCombinedProtection
+        ? combinedProtectionRate / uncappedCombinedProtection
+        : 0;
+      const engineSynergyReduction =
+        rawEngineSynergyReduction * protectionDisplayScale;
+      const efficiencySynergyReduction =
+        rawEfficiencySynergyReduction * protectionDisplayScale;
+      const commanderSynergyReduction =
+        rawCommanderSynergyReduction * protectionDisplayScale;
+      const all = priceIsActive
+        ? curve * 0.4 +
+          synergy * 0.3 +
+          price * 0.2 +
+          popularity * 0.1
+        : curve * 0.5 + synergy * 0.375 + popularity * 0.125;
       return {
         card,
         curve,
         synergy,
+        themeMismatch,
+        roleSurplus,
+        engineProtection,
+        efficiencyProtection,
+        commanderProtection: commanderConnection,
         price,
         popularity,
-        all: priceIsActive
-          ? curve * 0.4 + synergy * 0.3 + price * 0.2 + popularity * 0.1
-          : curve * 0.5 + synergy * 0.375 + popularity * 0.125,
+        all,
         tags: allTags,
         activeTags: tags,
         scoreBreakdown: {
@@ -1909,6 +2703,8 @@ export default function CutWorkspace({
           beforeCurveTotal,
           curveBucketCount,
           targetShare,
+          rawRoleSurplus,
+          roleQualityModifier: roleQualityModifierValue,
           cutsToCurveTarget,
           targetBucketCount: curveBucketCount - cutsToCurveTarget,
           previousCurveBucketCount:
@@ -1920,15 +2716,35 @@ export default function CutWorkspace({
             .map(([tag, score]) => ({ tag, score })),
           complementarySupport,
           payoffSupport,
+          sacrificeRecursionSupport,
+          selfRecurringSacrificeFodder,
           roleCoverage,
           strongestRole,
-          effectiveSynergy,
+          themeSupport,
+          engineSupport,
+          enginePrevalence,
+          graphEngineSupport,
+          directEnginePartnerCount,
+          engineBalance,
+          strongestEngineBalance,
+          contributingEngineBalances,
+          engineApplicable,
           commanderConnection,
+          synergyBeforeProtections,
+          engineSynergyReduction,
+          efficiencySynergyReduction,
+          bestEfficiency,
+          commanderSynergyReduction,
+          engineProtectionRate,
+          efficiencyProtectionRate,
+          commanderProtectionRate,
+          combinedProtectionRate,
           boostedTagCount,
           boostedTagBonus,
           sharedCommanderTags: sharedCommanderTags.length,
           cardValue,
           edhrecRank: card.cardData?.edhrecRank,
+          popularityContext,
         },
         afterCurve,
         bucket,
@@ -1945,6 +2761,7 @@ export default function CutWorkspace({
     commanderSynergyTags,
     boostedSynergies,
     budget,
+    contextualPopularity,
   ]);
   const allRanked = useMemo(
     () => [...recommendations].sort((a, b) => b[criterion] - a[criterion]),
@@ -2085,79 +2902,72 @@ export default function CutWorkspace({
           label: 'Low synergy',
           rows: [
             {
-              label: 'Theme support',
-              value: `${Math.round(focused.scoreBreakdown.support * 100)}`,
+              label: 'Theme penalty · 30%',
+              value: `+${(focused.themeMismatch * 30).toFixed(1)}`,
             },
             {
-              label: 'Producer/payoff support',
-              value: `${Math.round(focused.scoreBreakdown.payoffSupport * 100)}`,
-            },
-            {
-              label: 'Role coverage',
-              value: `${Math.round(focused.scoreBreakdown.roleCoverage * 100)}`,
-            },
-            {
-              label: 'Commander connection',
-              value: `${Math.round(focused.scoreBreakdown.commanderConnection * 100)}`,
+              label: 'Role-fit penalty · 70%',
+              value: `+${(focused.roleSurplus * 70).toFixed(1)}`,
             },
             ...(focused.scoreBreakdown.strongestRole
               ? [
                   {
-                    label: 'Protected role',
-                    value: focused.scoreBreakdown.strongestRole.name,
+                    label: `${focused.scoreBreakdown.strongestRole.name} role`,
+                    value: `${Number.isInteger(focused.scoreBreakdown.strongestRole.count) ? focused.scoreBreakdown.strongestRole.count : focused.scoreBreakdown.strongestRole.count.toFixed(1)} / ${focused.scoreBreakdown.strongestRole.minimum}–${focused.scoreBreakdown.strongestRole.maximum} · ×${focused.scoreBreakdown.roleQualityModifier.toFixed(2)}`,
                   },
-                  {
-                    label: 'Base target',
-                    value: `${focused.scoreBreakdown.strongestRole.baseMinimum}–${focused.scoreBreakdown.strongestRole.baseMaximum}`,
-                  },
-                  {
-                    label: 'Role count / adjusted target',
-                    value: `${Number.isInteger(focused.scoreBreakdown.strongestRole.count) ? focused.scoreBreakdown.strongestRole.count : focused.scoreBreakdown.strongestRole.count.toFixed(1)} / ${focused.scoreBreakdown.strongestRole.minimum}–${focused.scoreBreakdown.strongestRole.maximum}`,
-                  },
-                  ...(focused.scoreBreakdown.strongestRole.adjustment !== 0
-                    ? [
-                        {
-                          label: 'Theme-driven adjustment',
-                          value: `${focused.scoreBreakdown.strongestRole.adjustment > 0 ? '+' : ''}${focused.scoreBreakdown.strongestRole.adjustment}`,
-                        },
-                        {
-                          label: 'Adjustment signals',
-                          value:
-                            focused.scoreBreakdown.strongestRole.reasons.join(
-                              ' · ',
-                            ),
-                        },
-                      ]
-                    : []),
-                  ...(focused.scoreBreakdown.strongestRole.modalShare < 1
-                    ? [
-                        {
-                          label: 'MDFC face availability',
-                          value: `${Math.round(focused.scoreBreakdown.strongestRole.modalShare * 100)}%`,
-                        },
-                      ]
-                    : []),
                 ]
               : []),
             {
-              label: 'Shared commander tags',
-              value: `${focused.scoreBreakdown.sharedCommanderTags}`,
+              label: 'Base cut pressure',
+              value: `${Math.round(focused.scoreBreakdown.synergyBeforeProtections * 100)}`,
             },
+            ...(focused.scoreBreakdown.directEnginePartnerCount > 0
+              ? [
+                  {
+                    label: 'Direct effect connections',
+                    value: `${focused.scoreBreakdown.directEnginePartnerCount} card${focused.scoreBreakdown.directEnginePartnerCount === 1 ? '' : 's'}`,
+                  },
+                ]
+              : []),
+            ...(focused.scoreBreakdown.strongestEngineBalance
+              ? [
+                  {
+                    label: `Engine balance · ${focused.scoreBreakdown.contributingEngineBalances.map((entry) => displayTag(entry.tag)).join(', ')}`,
+                    value: `${Math.round(focused.scoreBreakdown.engineBalance * 100)}% combined`,
+                  },
+                ]
+              : []),
+            ...(focused.scoreBreakdown.engineSynergyReduction > 0
+              ? [
+                  {
+                    label: 'Engine protection',
+                    value: `${Math.round(focused.scoreBreakdown.engineProtectionRate * 100)}% · −${(focused.scoreBreakdown.engineSynergyReduction * 100).toFixed(1)}`,
+                  },
+                ]
+              : []),
+            ...(focused.scoreBreakdown.efficiencySynergyReduction > 0
+              ? [
+                  {
+                    label: `Efficiency boost${focused.scoreBreakdown.bestEfficiency ? ` · ${displayTag(focused.scoreBreakdown.bestEfficiency.tag)}` : ''}`,
+                    value: `${Math.round(focused.scoreBreakdown.efficiencyProtectionRate * 100)}% · −${(focused.scoreBreakdown.efficiencySynergyReduction * 100).toFixed(1)}`,
+                  },
+                ]
+              : []),
+            ...(focused.scoreBreakdown.commanderSynergyReduction > 0
+              ? [
+                  {
+                    label: 'Commander protection',
+                    value: `${Math.round(focused.scoreBreakdown.commanderProtectionRate * 100)}% · −${(focused.scoreBreakdown.commanderSynergyReduction * 100).toFixed(1)}`,
+                  },
+                ]
+              : []),
             {
-              label: `Boosted tags · ${focused.scoreBreakdown.boostedTagCount}`,
-              value: `+${Math.round(focused.scoreBreakdown.boostedTagBonus * 100)}`,
-            },
-            {
-              label: 'Effective synergy',
-              value: `${Math.round(focused.scoreBreakdown.effectiveSynergy * 100)}`,
-            },
-            {
-              label: 'Low-synergy cut score',
+              label: 'Final low-synergy score',
               value: `${Math.round(focused.synergy * 100)}`,
             },
           ],
           summary:
-            'The strongest of theme support, role coverage, producer/payoff support, or commander connection protects the card. Explicit tag boosts are then added, and the result is inverted into a cut score.',
+            'Theme and excess role coverage create the base pressure. Protections reduce that pressure by percentages rather than subtracting flat points, and their combined reduction is capped at 50%. Engine balance uses 100% of the strongest engine, 25% of the second, and 10% of the third; each contribution falls when its enablers and payoffs are imbalanced or this card is inefficient for its side.',
         },
         {
           value: 'price',
@@ -2190,6 +3000,18 @@ export default function CutWorkspace({
               value:
                 focused.scoreBreakdown.edhrecRank?.toLocaleString() ?? 'N/A',
             },
+            ...(focused.scoreBreakdown.popularityContext
+              ? [
+                  {
+                    label: `Rank among ${focused.scoreBreakdown.popularityContext.colorIdentity} cards`,
+                    value: `${focused.scoreBreakdown.popularityContext.rank.toLocaleString()} / ${focused.scoreBreakdown.popularityContext.poolSize.toLocaleString()}`,
+                  },
+                  {
+                    label: 'Commander-legal percentile',
+                    value: `Top ${(focused.scoreBreakdown.popularityContext.percentile * 100).toFixed(2)}%`,
+                  },
+                ]
+              : []),
             {
               label: 'Low-popularity cut score',
               value: focused.scoreBreakdown.edhrecRank
@@ -2198,7 +3020,7 @@ export default function CutWorkspace({
             },
           ],
           summary: focused.scoreBreakdown.edhrecRank
-            ? 'The EDHREC rank is scaled logarithmically against rank 25,000. Less-played cards receive a higher cut score.'
+            ? 'Popularity is ranked against cards legal for the commander’s color identity, then converted with a gentle square-root curve. Staple cards receive very little cut pressure.'
             : 'No EDHREC rank is available, so popularity is displayed as N/A.',
         },
         {
@@ -2246,12 +3068,12 @@ export default function CutWorkspace({
                 },
               ],
           summary:
-            'Each category score is multiplied by its weight. Those contributions are added to produce the overall cut score.',
+            'Curve, low synergy, price when enabled, and popularity are weighted and added. Commander protection is already contained within the reworked synergy score.',
         },
       ] as const)
     : [];
   const focusedConnectionTags = focused
-    ? [...focused.tags].sort(
+    ? conciseVisibleTags(focused.tags).sort(
         (first, second) =>
           (deckTopSynergyRanks.get(first) ?? Number.POSITIVE_INFINITY) -
             (deckTopSynergyRanks.get(second) ?? Number.POSITIVE_INFINITY) ||
@@ -2299,22 +3121,26 @@ export default function CutWorkspace({
     if (card.name === commander) return;
     advanceAfterDecision(card);
     const key = keyOf(card);
-    setKeptCards((current) => {
-      const next = new Set(current);
-      next.delete(key);
-      return next;
+    startTransition(() => {
+      setKeptCards((current) => {
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      });
+      setSelectedCuts((current) => new Set(current).add(key));
     });
-    setSelectedCuts((current) => new Set(current).add(key));
   }
   function markKeep(card: WorkspaceCard) {
     if (card.name !== commander) advanceAfterDecision(card);
     const key = keyOf(card);
-    setSelectedCuts((current) => {
-      const next = new Set(current);
-      next.delete(key);
-      return next;
+    startTransition(() => {
+      setSelectedCuts((current) => {
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      });
+      setKeptCards((current) => new Set(current).add(key));
     });
-    setKeptCards((current) => new Set(current).add(key));
   }
   function resetDecision(card: WorkspaceCard) {
     if (card.name === commander) return;
@@ -2349,7 +3175,7 @@ export default function CutWorkspace({
   const discoveredSynergies = useMemo(() => {
     const groups = new Map<string, WorkspaceCard[]>();
     cards.forEach((card) =>
-      synergyTags(card, knownTypes).forEach((tag) =>
+      conciseVisibleTags(synergyTags(card, knownTypes)).forEach((tag) =>
         groups.set(tag, [...(groups.get(tag) ?? []), card]),
       ),
     );
@@ -2440,10 +3266,9 @@ export default function CutWorkspace({
       });
     });
   }, [focused, ignoredSynergies]);
-  function renderConnectionTags(tags: string[], kind: 'theme' | 'role') {
+  function renderConnectionTag(tag: string, kind: 'theme' | 'role') {
     if (!focused) return null;
-    return tags.length ? (
-      tags.map((tag) => (
+    return (
         <Badge
           key={tag}
           variant="outline"
@@ -2478,9 +3303,6 @@ export default function CutWorkspace({
             }
           />
         </Badge>
-      ))
-    ) : (
-      <span className="text-[9px] text-zinc-700">None detected</span>
     );
   }
   function renderBrowserGroup(
@@ -2667,8 +3489,8 @@ export default function CutWorkspace({
         </section>
         {focused && (
           <section className="mb-7 rounded-2xl border border-lime-300/15 bg-[#101311] p-5">
-            <div className="grid grid-cols-1 gap-5 lg:grid-cols-3 lg:items-start">
-              <div className="group relative min-w-0 origin-center rounded-[4.75%] bg-black/20 shadow-xl shadow-black/20 ring-1 ring-white/10 [perspective:1200px] transition-[transform,box-shadow] duration-300 ease-out hover:z-20 hover:-translate-y-1 hover:scale-[1.035] hover:shadow-2xl hover:shadow-black/50 lg:aspect-[63/88]">
+            <div className="grid grid-cols-1 gap-5 min-[900px]:grid-cols-3 min-[900px]:items-start">
+              <div className="group relative mx-auto aspect-[63/88] w-full max-w-sm min-w-0 origin-center rounded-[4.75%] bg-black/20 shadow-xl shadow-black/20 ring-1 ring-white/10 [perspective:1200px] transition-[transform,box-shadow] duration-300 ease-out hover:z-20 hover:-translate-y-1 hover:scale-[1.035] hover:shadow-2xl hover:shadow-black/50 min-[900px]:max-w-none">
                 {focused.card.cardData?.imageUri ? (
                   <div
                     className="relative h-full w-full rounded-[4.75%] transition-transform duration-700 ease-in-out"
@@ -2729,7 +3551,7 @@ export default function CutWorkspace({
                   </Button>
                 )}
               </div>
-              <div className="flex min-w-0 flex-col lg:aspect-[63/88] lg:overflow-hidden">
+              <div className="mx-auto flex aspect-[63/88] w-full max-w-sm min-w-0 flex-col overflow-hidden min-[900px]:max-w-none">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-lime-300">
                   Interactive preview
                 </p>
@@ -2892,7 +3714,7 @@ export default function CutWorkspace({
                     )}
                   </Button>
                 </div>
-                <p className="mt-3 shrink-0 text-xs leading-5 text-zinc-500 lg:max-h-24 lg:overflow-y-auto">
+                <p className="mt-3 max-h-24 shrink-0 overflow-y-auto text-xs leading-5 text-zinc-500">
                   {focused.curve > 0
                     ? `Removing it improves the target curve by reducing the MV ${focused.bucket} bucket. `
                     : 'It does not materially improve the curve. '}
@@ -2907,7 +3729,7 @@ export default function CutWorkspace({
                     : ' No EDHREC rank is currently available.'}
                 </p>
               </div>
-              <div className="min-w-0 lg:aspect-[63/88] lg:overflow-hidden">
+              <div className="relative z-10 mx-auto aspect-[63/88] w-full max-w-sm min-w-0 min-[900px]:max-w-none">
                 <article className="hidden">
                   <div className="flex items-center gap-2">
                     <BarChart3 className="size-4 text-lime-300" />
@@ -2943,32 +3765,38 @@ export default function CutWorkspace({
                     ))}
                   </div>
                 </article>
-                <article className="flex h-full min-h-[360px] min-w-0 flex-col overflow-hidden rounded-xl border border-white/8 bg-black/20 p-4 lg:min-h-0">
+                <article className="flex h-full min-h-0 min-w-0 flex-col overflow-visible rounded-xl border border-white/8 bg-black/20 p-4">
                   <div className="flex items-center gap-2">
                     <Link2 className="size-4 text-lime-300" />
                     <h3 className="text-sm font-medium text-white">
                       Synergy connections
                     </h3>
                   </div>
-                  <div className="mt-3 grid max-h-28 shrink-0 grid-rows-2 overflow-hidden rounded-lg border border-white/8 bg-black/15">
-                    <div className="min-h-0 overflow-y-auto p-2">
+                  <div className="relative z-20 mt-3 grid shrink-0 grid-rows-2 overflow-visible rounded-lg border border-white/8 bg-black/15">
+                    <div className="min-w-0 p-2">
                       <p className="mb-1.5 text-[8px] font-semibold uppercase tracking-[0.18em] text-lime-300">
                         Themes
                       </p>
-                      <div className="flex flex-wrap gap-1">
-                        {renderConnectionTags(focusedThemeTags, 'theme')}
-                      </div>
+                      <OverflowConnectionTags
+                        tags={focusedThemeTags}
+                        renderTag={(tag) => renderConnectionTag(tag, 'theme')}
+                        onSelect={setSelectedSynergy}
+                        moreClassName="text-lime-200 hover:text-lime-100"
+                      />
                     </div>
-                    <div className="min-h-0 overflow-y-auto border-t border-white/8 p-2">
+                    <div className="min-w-0 border-t border-white/8 p-2">
                       <p className="mb-1.5 text-[8px] font-semibold uppercase tracking-[0.18em] text-sky-300">
                         Roles
                       </p>
-                      <div className="flex flex-wrap gap-1">
-                        {renderConnectionTags(focusedRoleTags, 'role')}
-                      </div>
+                      <OverflowConnectionTags
+                        tags={focusedRoleTags}
+                        renderTag={(tag) => renderConnectionTag(tag, 'role')}
+                        onSelect={setSelectedSynergy}
+                        moreClassName="text-sky-200 hover:text-sky-100"
+                      />
                     </div>
                   </div>
-                  <div className="mt-3 min-h-0 flex-1 space-y-1.5 overflow-y-auto">
+                  <div className="relative z-0 mt-3 min-h-0 flex-1 space-y-1.5 overflow-y-auto">
                     {synergyMatches.map((match) => (
                       <button
                         type="button"
@@ -3629,6 +4457,14 @@ export default function CutWorkspace({
                   “That much life” copies the size of the triggering life gain
                   or loss instead of using a fixed amount: +
                   {explainedModifier.scalingBonus.toFixed(2)}.
+                </p>
+              )}
+              {explainedModifier.destinationBonus > 0 && (
+                <p>
+                  <span className="text-zinc-200">Recursion destination:</span>{' '}
+                  Returns the card directly to the battlefield, avoiding the
+                  normal casting step: +
+                  {explainedModifier.destinationBonus.toFixed(2)}.
                 </p>
               )}
               <p className="border-t border-white/8 pt-3 font-mono text-zinc-300">

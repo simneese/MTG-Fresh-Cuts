@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
-import { AlertCircle, ArrowLeft, BarChart3, Check, Crown, DollarSign, Grid2X2, ImageIcon, Leaf, List, RefreshCw, Scissors, Search } from 'lucide-react';
+import { AlertCircle, ArrowLeft, BarChart3, Check, Crown, DollarSign, Grid2X2, ImageIcon, Leaf, List, LoaderCircle, RefreshCw, Scissors, Search } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import type { CachedCardData } from '@/lib/card-cache';
-import CutWorkspace from '@/CutWorkspace';
+import CutWorkspace, { type ContextualPopularity } from '@/CutWorkspace';
 import FoilIndicator from '@/components/FoilIndicator';
+import { loadBundledCatalog } from '@/lib/scryfall';
 
 export type WorkspaceCard = { key?: string; name: string; quantity: number; cardData?: CachedCardData };
 
@@ -71,6 +72,10 @@ export default function DeckWorkspace({ deckName, formatLabel, commander, cards,
   const [sortBy, setSortBy] = useState<'name' | 'mana' | 'price-high' | 'price-low'>('name');
   const [search, setSearch] = useState('');
   const [showCutNotice, setShowCutNotice] = useState(false);
+  const [preparationMessage, setPreparationMessage] = useState('');
+  const [contextualPopularity, setContextualPopularity] = useState(
+    new Map<string, ContextualPopularity>(),
+  );
   const [cutCriterion, setCutCriterion] = useState<'all' | 'curve' | 'synergy' | 'price'>('all');
   const [selectedCuts, setSelectedCuts] = useState<Set<string>>(new Set());
 
@@ -137,12 +142,68 @@ export default function DeckWorkspace({ deckName, formatLabel, commander, cards,
   }, [cards, commander, manaCurve, cardCount]);
   const visibleCutRecommendations = useMemo(() => [...cutRecommendations].sort((a, b) => b[cutCriterion] - a[cutCriterion]), [cutRecommendations, cutCriterion]);
   const selectedCutCount = [...selectedCuts].reduce((sum, key) => sum + (cards.find((card) => (card.key ?? card.name) === key)?.quantity ?? 0), 0);
-  if (showCutNotice) return <CutWorkspace deckName={deckName} commander={commander} cards={cards} cardCount={cardCount} target={target} onCardQuantityChange={onCardQuantityChange} onBack={() => setShowCutNotice(false)} />;
+  const yieldForPaint = () =>
+    new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  async function prepareMakeCuts() {
+    setPreparationMessage('Loading card catalog…');
+    await yieldForPaint();
+    const catalog = await loadBundledCatalog();
+    setPreparationMessage('Assigning card popularity…');
+    await yieldForPaint();
+    const commanderCard = cards.find((card) => card.name === commander);
+    const commanderIdentity = new Set(
+      commanderCard
+        ? (commanderCard.cardData?.colorIdentity ?? [])
+        : ['W', 'U', 'B', 'R', 'G'],
+    );
+    const identityLabel = commanderCard
+      ? commanderIdentity.size
+        ? [...commanderIdentity].sort().join('')
+        : 'Colorless'
+      : 'All colors';
+    const uniqueCatalogCards = [
+      ...new Map(
+        [...catalog.values()].map((card) => [card.nameKey, card] as const),
+      ).values(),
+    ];
+    const legalRankedCards = uniqueCatalogCards
+      .filter(
+        (card) =>
+          Boolean(card.edhrecRank && card.edhrecRank > 0) &&
+          card.colorIdentity.every((color) => commanderIdentity.has(color)),
+      )
+      .sort((first, second) => first.edhrecRank! - second.edhrecRank!);
+    const legalRankByName = new Map(
+      legalRankedCards.map((card, index) => [card.nameKey, index + 1]),
+    );
+    const poolSize = legalRankedCards.length;
+    const popularity = new Map<string, ContextualPopularity>();
+    cards.forEach((card) => {
+      const nameKey = card.cardData?.nameKey ?? card.name.toLowerCase();
+      const rank = legalRankByName.get(nameKey);
+      if (!rank) return;
+      const entry = {
+        rank,
+        poolSize,
+        percentile: poolSize > 1 ? (rank - 1) / (poolSize - 1) : 0,
+        colorIdentity: identityLabel,
+      };
+      popularity.set(card.key ?? card.name, entry);
+      popularity.set(nameKey, entry);
+    });
+    setContextualPopularity(popularity);
+    setPreparationMessage('Calculating deck synergy…');
+    await yieldForPaint();
+    setShowCutNotice(true);
+    setPreparationMessage('');
+  }
+  if (showCutNotice) return <CutWorkspace deckName={deckName} commander={commander} cards={cards} cardCount={cardCount} target={target} contextualPopularity={contextualPopularity} onCardQuantityChange={onCardQuantityChange} onBack={() => setShowCutNotice(false)} />;
+  if (preparationMessage) return <main className="grid min-h-screen place-items-center bg-background text-foreground"><section className="flex min-w-[300px] flex-col items-center rounded-2xl border border-white/10 bg-[#101311] px-10 py-12 text-center shadow-2xl shadow-black/30"><LoaderCircle className="size-9 animate-spin text-lime-300" /><p className="mt-5 font-heading text-lg font-semibold text-white">Preparing Make Cuts</p><p className="mt-2 text-sm text-zinc-500">{preparationMessage}</p></section></main>;
   return <main className="min-h-screen bg-background text-foreground">
     <header className="sticky top-0 z-20 border-b border-white/8 bg-[#0b0d0c]/90 backdrop-blur-xl">
       <div className="mx-auto flex max-w-[1540px] items-center justify-between gap-4 px-5 py-4 sm:px-8">
         <div className="flex min-w-0 items-center gap-3"><Button variant="ghost" size="icon" onClick={onBack} aria-label="Return to deck import"><ArrowLeft /></Button><div className="grid size-9 shrink-0 place-items-center rounded-xl border border-lime-300/20 bg-lime-300/10 text-lime-300"><Leaf className="size-5" /></div><div className="min-w-0"><input aria-label="Deck name" value={deckName} onChange={(event) => onDeckNameChange(event.target.value)} onBlur={() => { if (!deckName.trim()) onDeckNameChange('Unnamed'); }} className="block w-full min-w-0 truncate border-0 bg-transparent p-0 font-heading text-lg font-semibold text-white outline-none transition-colors placeholder:text-zinc-600 hover:text-lime-100 focus:text-lime-200" placeholder="Unnamed" /><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-600">{formatLabel} · {cardCount} cards · click name to edit</p></div></div>
-        <Button className="bg-lime-300 text-[#11150d] hover:bg-lime-200" onClick={() => setShowCutNotice(true)}><Scissors data-icon="inline-start" /> Make cuts</Button>
+        <Button className="bg-lime-300 text-[#11150d] hover:bg-lime-200" onClick={prepareMakeCuts}><Scissors data-icon="inline-start" /> Make cuts</Button>
       </div>
     </header>
 
