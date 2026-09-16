@@ -345,7 +345,7 @@ function synergyTags(card?: WorkspaceCard, knownTypes: string[] = []) {
   if (/\bput (?:a|one|two|three|\d+) \+1\/\+1 counters?/.test(text))
     tags.add('+1/+1 counters');
   if (
-    /\b(?:return|put) [^.]*\bfrom (?:your|a|any|an opponent'?s|target player'?s) graveyard\b[^.]*(?:\bto|\bonto) (?:your hand|the battlefield)|\bgraveyard to (?:your hand|the battlefield)/.test(
+    /\b(?:return|put) [^.]*\bfrom (?:your|a|any|an opponent'?s|target player'?s) graveyard\b[^.]*(?:\bto|\bonto) (?:your hand|the battlefield)|\bgraveyard to (?:your hand|the battlefield)|\b(?:you may )?cast [^.]*\bfrom (?:your|a|any) graveyard\b|\bthis (?:card|creature|spell) may be cast from (?:your|a|any) graveyard\b/.test(
       text,
     )
   )
@@ -457,7 +457,7 @@ function synergyTags(card?: WorkspaceCard, knownTypes: string[] = []) {
   )
     addTypeEvent('creature', 'enters');
   if (
-    /\bcreatures? (?:you control )?\bdies?\b|\bwhenever [^.]*\bcreature [^.]*\bdies?\b/.test(
+    /\bcreatures? (?:you control )?\bdies?\b|\bwhenever [^.]*\bcreature [^.]*\bdies?\b|\b(?:another |a |target )?creature (?:card )?is put into [^.]*\bgraveyard from the battlefield\b/.test(
       text,
     )
   )
@@ -468,6 +468,7 @@ function synergyTags(card?: WorkspaceCard, knownTypes: string[] = []) {
     /\bcreatures? (?:is|are|was|were|you control is) sacrificed\b/.test(text)
   )
     addTypeEvent('creature', 'sacrificed');
+  if (sacrificeReferences('creature')) addTypeEvent('creature', 'dies');
   if (
     /\binstant spells?\b|\bcast [^.]*\binstant\b|\binstant or sorcery spells?\b/.test(
       text,
@@ -691,7 +692,12 @@ function sacrificeAmounts(card: WorkspaceCard) {
   for (const match of text.matchAll(/\bsacrific(?:e|es)\s+([^:.;\n]+)/g)) {
     const sentenceStart = text.lastIndexOf('.', match.index ?? 0) + 1;
     const prefix = text.slice(sentenceStart, match.index).trim();
-    if (/\b(?:when|whenever|if)\b/.test(prefix)) continue;
+    const triggerStart = prefix.search(/\b(?:when|whenever|if)\b/);
+    // A sacrifice before the trigger's separating comma is something the
+    // card watches for (a payoff). A sacrifice after that comma is the effect
+    // the triggered ability causes (an enabler), as on Accursed Marauder.
+    if (triggerStart >= 0 && !prefix.slice(triggerStart).includes(','))
+      continue;
     const subject = match[1];
     let types = [
       'artifact',
@@ -837,13 +843,22 @@ function repeatabilityForSynergy(card: WorkspaceCard, tag: string) {
       };
       if (tagPatterns[tag]?.test(segment)) return true;
       const typeEvent = tag.match(/^type-event: (\w+) (.+)$/);
-      if (typeEvent)
+      if (typeEvent) {
+        if (
+          typeEvent[1] === 'creature' &&
+          typeEvent[2] === 'dies' &&
+          /\bcreature (?:card )?is put into [^.]*\bgraveyard from the battlefield\b/.test(
+            segment,
+          )
+        )
+          return true;
         return (
           new RegExp(`\\b${typeEvent[1]}s?\\b`).test(segment) &&
           new RegExp(`\\b${typeEvent[2].replace('to graveyard', 'graveyard')}\\b`).test(
             segment,
           )
         );
+      }
       if (tag.startsWith('type: ')) return false;
       const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       return new RegExp(`\\b${escapedTag}\\b`).test(segment);
@@ -890,7 +905,11 @@ function repeatabilityForSynergy(card: WorkspaceCard, tag: string) {
       unrestrictedTrigger ||
       (reusableActivation && !hasTapCost && !oncePerTurnLimit);
     const instantSpeed =
-      activatedAbility && !/\bactivate only as a sorcery\b/.test(segment);
+      (activatedAbility && !/\bactivate only as a sorcery\b/.test(segment)) ||
+      (unrestrictedTrigger &&
+        !/\b(?:only|during) (?:your|an opponent'?s) turn\b|\bonly during your (?:main phase|turn)\b/.test(
+          segment,
+        ));
     const continuousCountEffect =
       isCountTag &&
       isPermanent &&
@@ -1078,6 +1097,13 @@ function synergyRole(card: WorkspaceCard, tag: string): SynergyRole {
     )
   )
     return sacrificeSynergyAmount(card, tag) > 0 ? 'enabler' : 'payoff';
+  if (tag === 'type-event: creature dies')
+    return sacrificeSynergyAmount(
+      card,
+      'type-event: creature sacrificed',
+    ) > 0
+      ? 'enabler'
+      : 'payoff';
   if (tag === 'life gain') {
     const payoff = /\b(?:when|whenever|if) (?:you|a player) gain(?:s)? life\b/.test(
       text,
@@ -1120,6 +1146,7 @@ function synergyPreviewRoles(card: WorkspaceCard, tag: string) {
   const sacrificeTag =
     tag === 'sacrifice' ||
     /^type-event: .+ sacrificed$/.test(tag);
+  const creatureDeathTag = tag === 'type-event: creature dies';
   const drain = tag === 'drain' ? drainRoles(card) : null;
   const lifePayoff =
     tag === 'life gain'
@@ -1145,8 +1172,23 @@ function synergyPreviewRoles(card: WorkspaceCard, tag: string) {
       )
     : lifePayoff || Boolean(countPayoffPatterns[tag]?.test(text));
   return {
-    enabler: producer || enabler || lifeEnabler || Boolean(drain?.enabler),
-    payoff: payoff || Boolean(drain?.payoff),
+    enabler:
+      producer ||
+      enabler ||
+      lifeEnabler ||
+      Boolean(drain?.enabler) ||
+      (creatureDeathTag &&
+        sacrificeSynergyAmount(
+          card,
+          'type-event: creature sacrificed',
+        ) > 0),
+    payoff:
+      payoff ||
+      Boolean(drain?.payoff) ||
+      (creatureDeathTag &&
+        /\b(?:when|whenever|if)\b[^.]*\b(?:creature [^.]*dies?|creature (?:card )?is put into [^.]*graveyard from the battlefield)\b/.test(
+          text,
+        )),
   };
 }
 function rolesComplement(first: SynergyRole, second: SynergyRole) {
@@ -3576,9 +3618,9 @@ export default function CutWorkspace({
                   : 'No additional bonus (tap or once-per-turn limits may apply).'}
               </p>
               <p>
-                <span className="text-zinc-200">Instant-speed activation:</span>{' '}
+                <span className="text-zinc-200">Instant-speed access:</span>{' '}
                 {explainedModifier.instantSpeed
-                  ? `Yes — no “activate only as a sorcery” restriction: +${explainedModifier.instantSpeedBonus.toFixed(2)}.`
+                  ? `Yes — an unrestricted trigger or an ability without an “activate only as a sorcery” restriction: +${explainedModifier.instantSpeedBonus.toFixed(2)}.`
                   : 'No additional instant-speed bonus.'}
               </p>
               {explainedModifier.scalingBonus > 0 && (
