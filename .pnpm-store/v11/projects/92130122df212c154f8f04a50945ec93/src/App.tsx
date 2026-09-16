@@ -422,6 +422,15 @@ export default function Home() {
         cardCount={cardCount}
         target={target}
         onDeckNameChange={setDeckName}
+        onCardQuantityChange={(key, quantity) =>
+          setCards((current) =>
+            current.map((card) =>
+              card.key === key || (!card.key && card.name === key)
+                ? { ...card, quantity: Math.max(0, quantity) }
+                : card,
+            ),
+          )
+        }
         onBack={() => setScreen('import')}
       />
     );

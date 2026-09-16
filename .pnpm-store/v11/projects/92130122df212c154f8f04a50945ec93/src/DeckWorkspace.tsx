@@ -17,6 +17,7 @@ type Props = {
   cardCount: number;
   target: number;
   onDeckNameChange: (name: string) => void;
+  onCardQuantityChange: (key: string, quantity: number) => void;
   onBack: () => void;
 };
 
@@ -64,7 +65,7 @@ function Distribution({ title, subtitle, values }: { title: string; subtitle: st
   </article>;
 }
 
-export default function DeckWorkspace({ deckName, formatLabel, commander, cards, cardCount, target, onDeckNameChange, onBack }: Props) {
+export default function DeckWorkspace({ deckName, formatLabel, commander, cards, cardCount, target, onDeckNameChange, onCardQuantityChange, onBack }: Props) {
   const [view, setView] = useState<'art' | 'text'>('art');
   const [groupBy, setGroupBy] = useState<'none' | 'type' | 'rarity'>('type');
   const [sortBy, setSortBy] = useState<'name' | 'mana' | 'price-high' | 'price-low'>('name');
@@ -136,7 +137,7 @@ export default function DeckWorkspace({ deckName, formatLabel, commander, cards,
   }, [cards, commander, manaCurve, cardCount]);
   const visibleCutRecommendations = useMemo(() => [...cutRecommendations].sort((a, b) => b[cutCriterion] - a[cutCriterion]), [cutRecommendations, cutCriterion]);
   const selectedCutCount = [...selectedCuts].reduce((sum, key) => sum + (cards.find((card) => (card.key ?? card.name) === key)?.quantity ?? 0), 0);
-  if (showCutNotice) return <CutWorkspace deckName={deckName} commander={commander} cards={cards} cardCount={cardCount} target={target} onBack={() => setShowCutNotice(false)} />;
+  if (showCutNotice) return <CutWorkspace deckName={deckName} commander={commander} cards={cards} cardCount={cardCount} target={target} onCardQuantityChange={onCardQuantityChange} onBack={() => setShowCutNotice(false)} />;
   return <main className="min-h-screen bg-background text-foreground">
     <header className="sticky top-0 z-20 border-b border-white/8 bg-[#0b0d0c]/90 backdrop-blur-xl">
       <div className="mx-auto flex max-w-[1540px] items-center justify-between gap-4 px-5 py-4 sm:px-8">
