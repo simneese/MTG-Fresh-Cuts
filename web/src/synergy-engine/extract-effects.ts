@@ -1,4 +1,4 @@
-import type { WorkspaceCard } from '@/DeckWorkspace';
+import { SYNERGY_ANALYSIS_SCHEMA_VERSION } from './types.ts';
 import type {
   CardEffect,
   EffectAbilityKind,
@@ -8,7 +8,18 @@ import type {
   EffectSubject,
   EffectTiming,
   NamedTokenType,
-} from './types';
+} from './types.ts';
+
+type EffectCard = {
+  key?: string;
+  name: string;
+  cardData?: {
+    oracleText?: string;
+    typeLine?: string;
+    manaCost?: string;
+    keywords?: string[];
+  };
+};
 
 const NUMBER_WORDS: Record<string, number> = {
   a: 1,
@@ -38,13 +49,13 @@ export type OracleParagraph = {
   sourceStart: number;
 };
 
-export function oracleTextWithoutReminderText(card: WorkspaceCard) {
+export function oracleTextWithoutReminderText(card: EffectCard) {
   return (card.cardData?.oracleText ?? '')
     .toLowerCase()
     .replace(/\([^)]*\)/g, '');
 }
 
-export function oracleParagraphs(card: WorkspaceCard): OracleParagraph[] {
+export function oracleParagraphs(card: EffectCard): OracleParagraph[] {
   const text = oracleTextWithoutReminderText(card);
   let sourceStart = 0;
   return text.split(/\n+/).flatMap((raw, index) => {
@@ -57,7 +68,7 @@ export function oracleParagraphs(card: WorkspaceCard): OracleParagraph[] {
   });
 }
 
-function abilityKind(card: WorkspaceCard, paragraph: string): EffectAbilityKind {
+function abilityKind(card: EffectCard, paragraph: string): EffectAbilityKind {
   if (/\b(?:when|whenever|at)\b/.test(paragraph)) return 'triggered';
   if (/\bif\b[^.]*\binstead\b|\bwould\b[^.]*\binstead\b/.test(paragraph))
     return 'replacement';
@@ -67,7 +78,7 @@ function abilityKind(card: WorkspaceCard, paragraph: string): EffectAbilityKind 
   return 'static';
 }
 
-function timingFor(card: WorkspaceCard, paragraph: string): EffectTiming {
+function timingFor(card: EffectCard, paragraph: string): EffectTiming {
   const kind = abilityKind(card, paragraph);
   const oncePerTurn = /\bonly once (?:each|per) turn\b/.test(paragraph);
   const requiresTap = /^\s*[^:]*\{t\}[^:]*:/.test(paragraph);
@@ -121,7 +132,7 @@ function quantityFrom(text: string): EffectQuantity {
   };
 }
 
-function subjectFrom(text: string, card?: WorkspaceCard): EffectSubject {
+function subjectFrom(text: string, card?: EffectCard): EffectSubject {
   const tokenType = NAMED_TOKENS.find((type) =>
     new RegExp(`\\b${type}s?\\b`).test(text),
   );
@@ -165,8 +176,22 @@ function subjectFrom(text: string, card?: WorkspaceCard): EffectSubject {
     kind === 'creature' && /\btokens?\b/.test(text) ? 'token' : '',
     kind === 'token' && /\bcreatures?\b/.test(text) ? 'creature' : '',
   ].filter(Boolean);
+  const selfTypeLine = selfReference
+    ? card?.cardData?.typeLine?.toLowerCase() ?? ''
+    : '';
+  const resolvedKind = selfTypeLine.includes('creature')
+    ? 'creature'
+    : selfTypeLine.includes('artifact')
+      ? 'artifact'
+      : selfTypeLine.includes('land')
+        ? 'land'
+        : kind;
+  if (selfReference && selfTypeLine.includes('artifact'))
+    qualifiers.push('artifact');
+  if (selfReference && selfTypeLine.includes('creature'))
+    qualifiers.push('creature');
   return {
-    kind,
+    kind: resolvedKind,
     controller,
     tokenType,
     qualifiers: qualifiers.length ? qualifiers : undefined,
@@ -175,7 +200,7 @@ function subjectFrom(text: string, card?: WorkspaceCard): EffectSubject {
 
 function addMatches(
   effects: CardEffect[],
-  card: WorkspaceCard,
+  card: EffectCard,
   paragraph: OracleParagraph,
   detectorId: string,
   pattern: RegExp,
@@ -247,7 +272,19 @@ function addMatches(
   }
 }
 
-export function extractCardEffects(card: WorkspaceCard): CardEffect[] {
+const effectCache = new Map<string, CardEffect[]>();
+const MAX_EFFECT_CACHE_ENTRIES = 4000;
+
+function cardDataVersion(card: EffectCard) {
+  return [
+    SYNERGY_ANALYSIS_SCHEMA_VERSION,
+    card.cardData?.oracleText ?? '',
+    card.cardData?.typeLine ?? '',
+    card.cardData?.manaCost ?? '',
+  ].join('\u001f');
+}
+
+function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
   const effects: CardEffect[] = [];
   for (const paragraph of oracleParagraphs(card)) {
     addMatches(
@@ -281,6 +318,22 @@ export function extractCardEffects(card: WorkspaceCard): CardEffect[] {
       effects,
       card,
       paragraph,
+      'sacrifice-effect',
+      /\b([^,.;\n]+?)\s+(?:is|are) sacrificed\b/g,
+      {
+        label: (match) => {
+          const subject = subjectFrom(match[1], card).kind;
+          return `${subject[0].toUpperCase()}${subject.slice(1)} Sacrifice Trigger`;
+        },
+        direction: 'listens',
+        event: 'sacrificed',
+        subject: (match) => subjectFrom(match[1], card),
+      },
+    );
+    addMatches(
+      effects,
+      card,
+      paragraph,
       'dies-trigger',
       /\b(?:when|whenever|if)\b[^.\n]*\bcreatures?\b[^.\n]*\bdies?\b/g,
       {
@@ -288,6 +341,45 @@ export function extractCardEffects(card: WorkspaceCard): CardEffect[] {
         direction: 'listens',
         event: 'dies',
         subject: () => ({ kind: 'creature' }),
+      },
+    );
+    addMatches(
+      effects,
+      card,
+      paragraph,
+      'named-token-payoff',
+      /\b(?:number of |other |each |all )?(clues?|treasures?|food|blood|maps?|gold|powerstones?|incubators?) you control\b/g,
+      {
+        label: (match) => `Uses ${match[1][0].toUpperCase()}${match[1].slice(1)}`,
+        direction: 'listens',
+        event: 'created',
+        subject: (match) => subjectFrom(match[1]),
+      },
+    );
+    addMatches(
+      effects,
+      card,
+      paragraph,
+      'improvise',
+      /\b(?:has|have) improvise\b|\bimprovise\b/g,
+      {
+        label: 'Uses Artifacts for Improvise',
+        direction: 'listens',
+        event: 'created',
+        subject: () => ({ kind: 'artifact' }),
+      },
+    );
+    addMatches(
+      effects,
+      card,
+      paragraph,
+      'overload-target',
+      /\btarget\b[^.\n]*\bartifact\b[^.\n]*(?=\. overload\b|\boverload\b)/g,
+      {
+        label: 'Overload Artifact Payoff',
+        direction: 'listens',
+        event: 'created',
+        subject: () => ({ kind: 'artifact' }),
       },
     );
     addMatches(
@@ -305,6 +397,22 @@ export function extractCardEffects(card: WorkspaceCard): CardEffect[] {
         event: 'leaves-battlefield',
       },
     );
+    if (/\b(?:put|dies?|graveyard)\b/.test(paragraph.text))
+      addMatches(
+        effects,
+        card,
+        paragraph,
+        'recursion',
+        /\breturn\b[^.\n]*\bto (?:its owner'?s|your) hand\b/g,
+        {
+          label: 'Returns from Graveyard to Hand',
+          direction: 'emits',
+          event: 'returned',
+          subject: (match) => subjectFrom(match[0], card),
+          sourceZone: 'graveyard',
+          destinationZone: 'hand',
+        },
+      );
     addMatches(
       effects,
       card,
@@ -322,6 +430,32 @@ export function extractCardEffects(card: WorkspaceCard): CardEffect[] {
         },
         direction: 'creates',
         event: 'created',
+      },
+    );
+    addMatches(
+      effects,
+      card,
+      paragraph,
+      'untap-lands',
+      /\buntap (?:all|up to [^.\n]+)?\s*lands?\b[^.\n]*/g,
+      {
+        label: 'Untaps Lands',
+        direction: 'emits',
+        event: 'untapped',
+        subject: () => ({ kind: 'land', controller: 'you' }),
+      },
+    );
+    addMatches(
+      effects,
+      card,
+      paragraph,
+      'regeneration-protection',
+      /\bregenerate target\b[^.\n]*(?:creature|insect|rat|spider|squirrel|sliver|zombie|goblin)[^.\n]*/g,
+      {
+        label: 'Protects Creature',
+        direction: 'grants',
+        event: 'returned',
+        subject: () => ({ kind: 'creature' }),
       },
     );
     addMatches(effects, card, paragraph, 'draw', /\bdraws?\b[^.\n]*/g, {
@@ -571,4 +705,19 @@ export function extractCardEffects(card: WorkspaceCard): CardEffect[] {
     );
   }
   return effects;
+}
+
+export function extractCardEffects(card: EffectCard): CardEffect[] {
+  const version = cardDataVersion(card);
+  const cached = effectCache.get(version);
+  if (cached) return cached;
+  const effects = extractCardEffectsUncached(card);
+  if (effectCache.size >= MAX_EFFECT_CACHE_ENTRIES)
+    effectCache.delete(effectCache.keys().next().value!);
+  effectCache.set(version, effects);
+  return effects;
+}
+
+export function clearCardEffectCache() {
+  effectCache.clear();
 }

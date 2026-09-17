@@ -1,4 +1,4 @@
-import type { CardEffect, EngineSignals, NamedTokenType } from './types';
+import type { CardEffect, EngineSignals, NamedTokenType } from './types.ts';
 
 const ARTIFACT_TOKEN_TYPES = new Set<NamedTokenType>([
   'blood',
@@ -34,6 +34,7 @@ function subjectNames(effect: CardEffect) {
     names.add('creature');
   if (
     effect.subject.kind === 'artifact' ||
+    effect.subject.qualifiers?.includes('artifact') ||
     (effect.subject.tokenType && ARTIFACT_TOKEN_TYPES.has(effect.subject.tokenType))
   )
     names.add('artifact');
@@ -135,7 +136,7 @@ export function buildEngineSignals(effects: CardEffect[]): EngineSignals {
     const signals = directSignals(effect);
     if (effect.sourceZone === 'graveyard') listens.add('graveyard-stocked');
     if (effect.direction === 'listens')
-      signals.forEach((signal) => listens.add(signal));
+      expandEmittedSignals(signals).forEach((signal) => listens.add(signal));
     if (EMITTING_DIRECTIONS.has(effect.direction)) {
       signals.forEach((signal) => {
         emittedSeeds.add(signal);

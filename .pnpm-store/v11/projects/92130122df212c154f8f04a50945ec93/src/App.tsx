@@ -285,6 +285,7 @@ export default function Home() {
   }, [cards]);
 
   async function importDeck() {
+    const importStarted = performance.now();
     const result = parseDeckList(deckText);
     setCards(result.cards);
     setErrors(result.errors);
@@ -397,6 +398,11 @@ export default function Home() {
       );
     } finally {
       setIsLoadingCards(false);
+      requestAnimationFrame(() =>
+        console.debug(
+          `[performance] Deck import: ${(performance.now() - importStarted).toFixed(1)}ms for ${result.cards.length} unique cards`,
+        ),
+      );
     }
   }
   function resetDeck() {

@@ -62,7 +62,7 @@ export type ContextualPopularity = {
   colorIdentity: string;
 };
 
-function OverflowConnectionTags({
+export function OverflowConnectionTags({
   tags,
   renderTag,
   onSelect,
@@ -264,6 +264,12 @@ function isStrategicThemeTag(tag: string) {
     !isFunctionalRoleTag(normalizedTag) &&
     !INCIDENTAL_THEME_TAGS.has(normalizedTag)
   );
+}
+export function splitConnectionTags(tags: string[]) {
+  return {
+    themes: tags.filter((tag) => !isFunctionalRoleTag(tag)),
+    roles: tags.filter(isFunctionalRoleTag),
+  };
 }
 function engineFamilyForTag(tag: string) {
   return engineFamilyForLegacyTag(tag) ?? `non-engine:${tag}`;
@@ -2013,6 +2019,60 @@ export default function CutWorkspace({
       ),
     [cards, structuredEffectsByCard],
   );
+  const cardTagsByCard = useMemo(
+    () =>
+      new Map(
+        cards.map(
+          (card) => [keyOf(card), synergyTags(card, knownTypes)] as const,
+        ),
+      ),
+    [cards, knownTypes],
+  );
+  const deckAnalysisIndex = useMemo(() => {
+    const bySignal = new Map<string, WorkspaceCard[]>();
+    const byEngine = new Map<string, WorkspaceCard[]>();
+    const byRole = new Map<string, WorkspaceCard[]>();
+    cards.forEach((card) => {
+      const signals = structuredSignalsByCard.get(keyOf(card));
+      if (signals) {
+        new Set([...signals.emits, ...signals.listens]).forEach((signal) =>
+          bySignal.set(signal, [...(bySignal.get(signal) ?? []), card]),
+        );
+      }
+      const tags = cardTagsByCard.get(keyOf(card)) ?? [];
+      tags.filter(isFunctionalRoleTag).forEach((role) =>
+        byRole.set(role, [...(byRole.get(role) ?? []), card]),
+      );
+      dedupeEngineFamilies(
+        tags.filter((tag) => !isFunctionalRoleTag(tag)).map(engineFamilyForTag),
+      ).forEach((engine) =>
+        byEngine.set(engine, [...(byEngine.get(engine) ?? []), card]),
+      );
+    });
+    return { bySignal, byEngine, byRole };
+  }, [cards, cardTagsByCard, structuredSignalsByCard]);
+  const peerEfficiencyStats = useMemo(() => {
+    const stats = new Map<string, { sum: number; count: number }>();
+    cards.forEach((card) => {
+      if (card.cardData?.type === 'Land') return;
+      const mana = Math.max(1, card.cardData?.manaValue ?? 0);
+      (cardTagsByCard.get(keyOf(card)) ?? [])
+        .filter(
+          (tag) =>
+            !isIgnoredSynergy(tag) &&
+            tag !== 'land' &&
+            !tag.startsWith('type: ') &&
+            (isFunctionalRoleTag(tag) || isStrategicThemeTag(tag)),
+        )
+        .forEach((tag) => {
+          const current = stats.get(tag) ?? { sum: 0, count: 0 };
+          current.sum += tagModifier(card, tag).value / mana;
+          current.count += 1;
+          stats.set(tag, current);
+        });
+    });
+    return stats;
+  }, [cards, cardTagsByCard, ignoredSynergies]);
   const commanderSynergyTags = useMemo(
     () =>
       new Set(
@@ -2072,7 +2132,7 @@ export default function CutWorkspace({
         .map(([tag], index) => [tag, index + 1]),
     );
   }, [cards, commander, knownTypes, ignoredSynergies]);
-  const recommendations = useMemo(() => {
+  const staticRecommendations = useMemo(() => {
     const eligible = cards.filter((card) => !isBasicLand(card));
     const frequency = new Map<string, number>();
     eligible.forEach((card) =>
@@ -2215,9 +2275,7 @@ export default function CutWorkspace({
         0,
         Math.floor(card.cardData?.manaValue ?? 0),
       );
-      const beforeCurve = [...workingCurve];
-      if (selectedCuts.has(keyOf(card)) && card.cardData?.type !== 'Land')
-        beforeCurve[bucket] += card.quantity;
+      const beforeCurve = [...baseCurve];
       const beforePenalty = curvePenalty(beforeCurve);
       const beforeCurveTotal = beforeCurve.reduce(
         (sum, count) => sum + count,
@@ -2271,7 +2329,7 @@ export default function CutWorkspace({
             5,
         ),
       );
-      const allTags = synergyTags(card, knownTypes);
+      const allTags = cardTagsByCard.get(keyOf(card)) ?? [];
       const tags = allTags.filter((tag) => !isIgnoredSynergy(tag));
       const thematicTags = tags.filter((tag) => !isFunctionalRoleTag(tag));
       const strategicThemeTags = thematicTags.filter(isStrategicThemeTag);
@@ -2287,24 +2345,13 @@ export default function CutWorkspace({
                   (isFunctionalRoleTag(tag) || isStrategicThemeTag(tag)),
               )
               .flatMap((tag) => {
-                const peers = eligible.filter((other) => {
-                  if (keyOf(other) === keyOf(card)) return false;
-                  if (other.cardData?.type === 'Land') return false;
-                  return synergyTags(other, knownTypes)
-                    .filter((otherTag) => !isIgnoredSynergy(otherTag))
-                    .includes(tag);
-                });
-                if (!peers.length) return [];
                 const efficiencyRate =
                   tagModifier(card, tag).value / manaInvestment;
+                const totals = peerEfficiencyStats.get(tag);
+                const peerCount = Math.max(0, (totals?.count ?? 0) - 1);
+                if (!peerCount) return [];
                 const peerRate =
-                  peers.reduce(
-                    (sum, peer) =>
-                      sum +
-                      tagModifier(peer, tag).value /
-                        Math.max(1, peer.cardData?.manaValue ?? 0),
-                    0,
-                  ) / peers.length;
+                  ((totals?.sum ?? 0) - efficiencyRate) / peerCount;
                 const protection = Math.min(
                   1,
                   Math.max(0, efficiencyRate / Math.max(0.01, peerRate) - 1),
@@ -2315,7 +2362,7 @@ export default function CutWorkspace({
                     protection,
                     efficiencyRate,
                     peerRate,
-                    peerCount: peers.length,
+                    peerCount,
                     manaInvestment,
                     quality: tagModifier(card, tag).value,
                   },
@@ -2586,8 +2633,16 @@ export default function CutWorkspace({
       const roleQualityModifierValue = strongestRole?.quality ?? 1;
       const roleSurplus = rawRoleSurplus / roleQualityModifierValue;
       const cardEngineSignals = engineSignalsByCard.get(keyOf(card))!;
-      const directEnginePartnerCount = eligible
-        .filter((candidate) => keyOf(candidate) !== keyOf(card))
+      const indexedPartners = new Set(
+        [...cardEngineSignals.emits, ...cardEngineSignals.listens].flatMap(
+          (signal) => deckAnalysisIndex.bySignal.get(signal) ?? [],
+        ),
+      );
+      const directEnginePartnerCount = [...indexedPartners]
+        .filter(
+          (candidate) =>
+            !isBasicLand(candidate) && keyOf(candidate) !== keyOf(card),
+        )
         .filter((candidate) =>
           signalsConnect(
             cardEngineSignals,
@@ -2937,16 +2992,113 @@ export default function CutWorkspace({
     cards,
     commander,
     cardCount,
-    workingCurve,
+    baseCurve,
     knownTypes,
+    cardTagsByCard,
+    deckAnalysisIndex,
+    peerEfficiencyStats,
     structuredEffectsByCard,
-    selectedCuts,
     ignoredSynergies,
     commanderSynergyTags,
     boostedSynergies,
     budget,
     contextualPopularity,
   ]);
+  const recommendations = useMemo(
+    () =>
+      staticRecommendations.map((item) => {
+        const beforeCurve = [...workingCurve];
+        if (
+          selectedCuts.has(keyOf(item.card)) &&
+          item.card.cardData?.type !== 'Land'
+        )
+          beforeCurve[item.bucket] += item.card.quantity;
+        const beforePenalty = curvePenalty(beforeCurve);
+        const beforeCurveTotal = beforeCurve.reduce(
+          (sum, count) => sum + count,
+          0,
+        );
+        const curveBucketCount = beforeCurve[item.bucket];
+        const targetShare = curveTargetFor(item.bucket);
+        const maximumCutsAboveMinimum = Math.max(
+          0,
+          curveBucketCount - curveMinimumFor(item.bucket),
+        );
+        const cutsForTargetShare = Math.min(
+          maximumCutsAboveMinimum,
+          Math.max(
+            0,
+            Math.ceil(
+              (curveBucketCount - targetShare * beforeCurveTotal) /
+                (1 - targetShare),
+            ),
+          ),
+        );
+        const cutsForTailShape =
+          item.bucket >= 4
+            ? Math.min(
+                maximumCutsAboveMinimum,
+                Math.max(
+                  0,
+                  Math.ceil(
+                    curveBucketCount -
+                      Math.max(
+                        curveMinimumFor(item.bucket),
+                        beforeCurve[item.bucket - 1],
+                      ),
+                  ),
+                ),
+              )
+            : 0;
+        const cutsToCurveTarget = Math.min(
+          curveBucketCount,
+          Math.max(cutsForTargetShare, cutsForTailShape),
+        );
+        const afterCurve = [...beforeCurve];
+        if (item.card.cardData?.type !== 'Land')
+          afterCurve[item.bucket] = Math.max(
+            0,
+            afterCurve[item.bucket] - item.card.quantity,
+          );
+        const curve = Math.min(
+          1,
+          Math.max(
+            0,
+            ((beforePenalty - curvePenalty(afterCurve)) /
+              Math.max(0.01, beforePenalty)) *
+              5,
+          ),
+        );
+        const all =
+          budget !== null
+            ? curve * 0.4 +
+              item.synergy * 0.3 +
+              item.price * 0.2 +
+              item.popularity * 0.1
+            : curve * 0.5 +
+              item.synergy * 0.375 +
+              item.popularity * 0.125;
+        return {
+          ...item,
+          curve,
+          all,
+          afterCurve,
+          scoreBreakdown: {
+            ...item.scoreBreakdown,
+            beforeCurvePenalty: beforePenalty,
+            afterCurvePenalty: curvePenalty(afterCurve),
+            beforeCurveTotal,
+            curveBucketCount,
+            targetShare,
+            cutsToCurveTarget,
+            targetBucketCount: curveBucketCount - cutsToCurveTarget,
+            previousCurveBucketCount:
+              item.bucket >= 4 ? beforeCurve[item.bucket - 1] : null,
+          },
+        };
+      }),
+    [staticRecommendations, workingCurve, selectedCuts, budget],
+  );
   const allRanked = useMemo(
     () => [...recommendations].sort((a, b) => b[criterion] - a[criterion]),
     [recommendations, criterion],
@@ -3247,10 +3399,10 @@ export default function CutWorkspace({
           focused.tags.indexOf(first) - focused.tags.indexOf(second),
       )
     : [];
-  const focusedThemeTags = focusedConnectionTags.filter(
-    (tag) => !isFunctionalRoleTag(tag),
-  );
-  const focusedRoleTags = focusedConnectionTags.filter(isFunctionalRoleTag);
+  const {
+    themes: focusedThemeTags,
+    roles: focusedRoleTags,
+  } = splitConnectionTags(focusedConnectionTags);
   const focusedEngineFamilies = dedupeEngineFamilies(
     focusedThemeTags.map(engineFamilyForTag),
   ).sort(
@@ -3345,6 +3497,7 @@ export default function CutWorkspace({
   }
   function markCut(card: WorkspaceCard) {
     if (card.name === commander) return;
+    const decisionStarted = performance.now();
     advanceAfterDecision(card);
     const key = keyOf(card);
     startTransition(() => {
@@ -3355,8 +3508,14 @@ export default function CutWorkspace({
       });
       setSelectedCuts((current) => new Set(current).add(key));
     });
+    requestAnimationFrame(() =>
+      console.debug(
+        `[performance] Cut decision: ${(performance.now() - decisionStarted).toFixed(1)}ms`,
+      ),
+    );
   }
   function markKeep(card: WorkspaceCard) {
+    const decisionStarted = performance.now();
     if (card.name !== commander) advanceAfterDecision(card);
     const key = keyOf(card);
     startTransition(() => {
@@ -3367,6 +3526,11 @@ export default function CutWorkspace({
       });
       setKeptCards((current) => new Set(current).add(key));
     });
+    requestAnimationFrame(() =>
+      console.debug(
+        `[performance] Keep decision: ${(performance.now() - decisionStarted).toFixed(1)}ms`,
+      ),
+    );
   }
   function resetDecision(card: WorkspaceCard) {
     if (card.name === commander) return;

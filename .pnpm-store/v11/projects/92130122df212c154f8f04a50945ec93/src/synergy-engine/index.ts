@@ -5,6 +5,7 @@ export {
 } from './types';
 export {
   extractCardEffects,
+  clearCardEffectCache,
   oracleParagraphs,
   oracleTextWithoutReminderText,
 } from './extract-effects';

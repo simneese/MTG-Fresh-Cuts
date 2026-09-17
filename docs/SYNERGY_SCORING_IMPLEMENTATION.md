@@ -357,12 +357,12 @@ Acceptance criteria:
 
 - [x] Cache raw synergy-tag extraction per card.
 - [x] Defer deck-wide rescoring so the next-card preview updates first.
-- [ ] Cache structured effect extraction by card-data version.
-- [ ] Pre-index cards by signal, engine family, and role.
-- [ ] Precompute peer quality averages once per deck rather than inside every card loop.
-- [ ] Recompute only curve-dependent fields after a cut when engine membership is unchanged.
-- [ ] Move heavy preparation to a Web Worker if indexed calculations remain perceptible.
-- [ ] Add timing instrumentation for import, Make Cuts preparation, and each decision.
+- [x] Cache structured effect extraction by card-data version.
+- [x] Pre-index cards by signal, engine family, and role.
+- [x] Precompute peer quality averages once per deck rather than inside every card loop.
+- [x] Recompute only curve-dependent fields after a cut when engine membership is unchanged.
+- [x] Evaluate the Web Worker threshold; retain indexed preparation on the main thread and use the new timings to identify when worker offloading becomes necessary.
+- [x] Add timing instrumentation for import, Make Cuts preparation, and each decision.
 
 Acceptance criteria:
 
@@ -371,28 +371,28 @@ Acceptance criteria:
 
 ### Phase 11 — Regression suite
 
-- [ ] Add unit tests for every effect extractor.
-- [ ] Add graph implication tests.
-- [ ] Add negative tests for reminder text and unrelated paragraphs.
-- [ ] Add score snapshots for representative decks.
-- [ ] Add UI tests for theme/role separation and overflow menus.
-- [ ] Add performance tests for 100-, 200-, and 500-card inputs.
-- [ ] Require a regression test for every corrected card edge case.
+- [x] Add unit tests for every effect extractor.
+- [x] Add graph implication tests.
+- [x] Add negative tests for reminder text and unrelated paragraphs.
+- [x] Add score snapshots for representative decks.
+- [x] Add UI tests for theme/role separation and overflow menus.
+- [x] Add performance tests for 100-, 200-, and 500-card inputs.
+- [x] Require a regression test for every corrected card edge case.
 
 Required named fixtures:
 
-- [ ] Fumulus, the Infestation — watches creature sacrifice
-- [ ] Blood Artist — target-player drain wording
-- [ ] Nadier's Nightblade — token LTB payoff
-- [ ] Tangletrove Kelp — Clue payoff and self-sacrifice relationships
-- [ ] Inspiring Statuary — Improvise and Artifact Count
-- [ ] Rise and Shine — Overload expansion
-- [ ] Wilderness Reclamation — repeatable land-untap ramp
-- [ ] Brood of Cockroaches — delayed recursion without intra-turn repeatability
-- [ ] Gravecrawler — repeatable graveyard casting
-- [ ] Mushroom Watchdogs — sorcery-speed restriction
-- [ ] Gingerbread Cabin — reminder text must not tag the land as sacrificed
-- [ ] Swarmyard — commander-type protection utility
+- [x] Fumulus, the Infestation — watches creature sacrifice
+- [x] Blood Artist — target-player drain wording
+- [x] Nadier's Nightblade — token LTB payoff
+- [x] Tangletrove Kelp — Clue payoff and self-sacrifice relationships
+- [x] Inspiring Statuary — Improvise and Artifact Count
+- [x] Rise and Shine — Overload expansion
+- [x] Wilderness Reclamation — repeatable land-untap ramp
+- [x] Brood of Cockroaches — delayed recursion without intra-turn repeatability
+- [x] Gravecrawler — repeatable graveyard casting
+- [x] Mushroom Watchdogs — sorcery-speed restriction
+- [x] Gingerbread Cabin — reminder text must not tag the land as sacrificed
+- [x] Swarmyard — commander-type protection utility
 
 ### Phase 12 — Legacy removal and tuning
 

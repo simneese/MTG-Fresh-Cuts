@@ -7,6 +7,7 @@ import type { CachedCardData } from '@/lib/card-cache';
 import CutWorkspace, { type ContextualPopularity } from '@/CutWorkspace';
 import FoilIndicator from '@/components/FoilIndicator';
 import { loadBundledCatalog } from '@/lib/scryfall';
+import { buildEngineSignals, extractCardEffects } from '@/synergy-engine';
 
 export type WorkspaceCard = { key?: string; name: string; quantity: number; cardData?: CachedCardData };
 
@@ -145,6 +146,7 @@ export default function DeckWorkspace({ deckName, formatLabel, commander, cards,
   const yieldForPaint = () =>
     new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   async function prepareMakeCuts() {
+    const preparationStarted = performance.now();
     setPreparationMessage('Loading card catalog…');
     await yieldForPaint();
     const catalog = await loadBundledCatalog();
@@ -194,8 +196,18 @@ export default function DeckWorkspace({ deckName, formatLabel, commander, cards,
     setContextualPopularity(popularity);
     setPreparationMessage('Calculating deck synergy…');
     await yieldForPaint();
+    const analysisStarted = performance.now();
+    cards.forEach((card) => buildEngineSignals(extractCardEffects(card)));
+    console.debug(
+      `[performance] Structured deck analysis: ${(performance.now() - analysisStarted).toFixed(1)}ms for ${cards.length} unique cards`,
+    );
     setShowCutNotice(true);
     setPreparationMessage('');
+    requestAnimationFrame(() =>
+      console.debug(
+        `[performance] Make Cuts preparation: ${(performance.now() - preparationStarted).toFixed(1)}ms`,
+      ),
+    );
   }
   if (showCutNotice) return <CutWorkspace deckName={deckName} commander={commander} cards={cards} cardCount={cardCount} target={target} contextualPopularity={contextualPopularity} onCardQuantityChange={onCardQuantityChange} onBack={() => setShowCutNotice(false)} />;
   if (preparationMessage) return <main className="grid min-h-screen place-items-center bg-background text-foreground"><section className="flex min-w-[300px] flex-col items-center rounded-2xl border border-white/10 bg-[#101311] px-10 py-12 text-center shadow-2xl shadow-black/30"><LoaderCircle className="size-9 animate-spin text-lime-300" /><p className="mt-5 font-heading text-lg font-semibold text-white">Preparing Make Cuts</p><p className="mt-2 text-sm text-zinc-500">{preparationMessage}</p></section></main>;
