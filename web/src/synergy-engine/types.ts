@@ -51,7 +51,9 @@ export type EffectSubject = {
 };
 
 export type EffectEvent =
+  | 'attacks'
   | 'cast'
+  | 'combat-damage'
   | 'countered'
   | 'created'
   | 'discarded'
@@ -63,6 +65,7 @@ export type EffectEvent =
   | 'life-gained'
   | 'life-lost'
   | 'milled'
+  | 'investigated'
   | 'returned'
   | 'sacrificed'
   | 'searched'

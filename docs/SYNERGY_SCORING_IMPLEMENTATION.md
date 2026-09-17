@@ -238,14 +238,14 @@ Acceptance criteria:
 - [x] Connect destroy-creature effects to creature dies and creature LTB.
 - [x] Connect exile/bounce creature effects to creature LTB without treating them as dies.
 - [x] Connect token LTB listeners to relevant sacrifice and removal events.
-- [ ] Connect Treasure, Clue, Food, Blood, Map, Gold, Powerstone, and Incubator events to Artifact and Token parent types.
-- [ ] Connect investigate to Clue creation.
-- [ ] Connect creature-token creation to Token Count and Creature Count consumers.
-- [ ] Connect discard costs/effects to discard and graveyard payoffs.
-- [ ] Connect mill/surveil/self-mill to graveyard-resource payoffs without calling them recursion.
-- [ ] Connect life gain, opponent life loss, and paired drain conversions.
-- [ ] Connect cast, ETB, attack, combat-damage, dies, sacrifice, and LTB event families.
-- [ ] Model Overload as target-to-each expansion for the affected effect.
+- [x] Connect Treasure, Clue, Food, Blood, Map, Gold, Powerstone, and Incubator events to Artifact and Token parent types.
+- [x] Connect investigate to Clue creation.
+- [x] Connect creature-token creation to Token Count and Creature Count consumers.
+- [x] Connect discard costs/effects to discard and graveyard payoffs.
+- [x] Connect mill/surveil/self-mill to graveyard-resource payoffs without calling them recursion.
+- [x] Connect life gain, opponent life loss, and paired drain conversions.
+- [x] Connect cast, ETB, attack, combat-damage, dies, sacrifice, and LTB event families.
+- [x] Model Overload as target-to-each expansion for the affected effect.
 - [ ] Add graph tests proving invalid implications do not occur.
 
 Acceptance criteria:
@@ -259,11 +259,11 @@ Acceptance criteria:
 - [x] Canonicalize sacrifice/death/LTB-related tags for engine-balance scoring.
 - [x] Prevent related sacrifice tags from counting as several independent engines.
 - [x] Add canonical count/resource engine identifiers.
-- [ ] Move all family definitions into a data-driven registry.
-- [ ] Define which signals qualify a card as an enabler, payoff, both, or neutral for each family.
-- [ ] Define engine-specific desired enabler/payoff ratios where the default 2:1 is inappropriate.
-- [ ] Distinguish creature-type membership from creature-type payoff functionality.
-- [ ] Prevent functional roles from becoming theme engines automatically.
+- [x] Move all family definitions into a data-driven registry.
+- [x] Define which signals qualify a card as an enabler, payoff, both, or neutral for each family.
+- [x] Define engine-specific desired enabler/payoff ratios where the default 2:1 is inappropriate.
+- [x] Distinguish creature-type membership from creature-type payoff functionality.
+- [x] Prevent functional roles from becoming theme engines automatically.
 
 Acceptance criteria:
 
@@ -276,11 +276,11 @@ Acceptance criteria:
 - [x] Reduce protection for cards on an oversupplied side.
 - [x] Compare a card's effect modifier with comparable cards in the same engine position.
 - [x] Support multiple engines with 100% / 25% / 10% diminishing returns.
-- [ ] Weight engine supply by effect quantity rather than card count alone.
-- [ ] Treat optional, conditional, and once-per-turn production distinctly.
-- [ ] Account for multiplayer quantities such as “each player” and “each opponent.”
-- [ ] Avoid counting the same ability twice through parent and child engine families.
-- [ ] Add configurable engine ratio and quality weights.
+- [x] Weight engine supply by effect quantity rather than card count alone.
+- [x] Treat optional, conditional, and once-per-turn production distinctly.
+- [x] Account for multiplayer quantities such as “each player” and “each opponent.”
+- [x] Avoid counting the same ability twice through parent and child engine families.
+- [x] Add configurable engine ratio and quality weights.
 
 Acceptance criteria:
 
@@ -294,11 +294,11 @@ Acceptance criteria:
 - [x] Apply role quality to role-fit pressure rather than adding virtual role slots.
 - [x] Include Counterspell in Protection and Cost Reduction in Mana Ramp.
 - [x] Treat lands as the Land role rather than generic ramp.
-- [ ] Move role definitions and targets into a dedicated registry.
-- [ ] Replace hard-coded theme adjustments with declared theme-to-role relationships.
-- [ ] Define bounded adjustments for sacrifice/graveyard themes increasing Recursion demand.
-- [ ] Define X-spell and high-curve demand increasing Mana Ramp demand.
-- [ ] Add role-specific comparability groups for future card-versus-card decisions.
+- [x] Move role definitions and targets into a dedicated registry.
+- [x] Replace hard-coded theme adjustments with declared theme-to-role relationships.
+- [x] Define bounded adjustments for sacrifice/graveyard themes increasing Recursion demand.
+- [x] Define X-spell and high-curve demand increasing Mana Ramp demand.
+- [x] Add role-specific comparability groups for future card-versus-card decisions.
 
 Acceptance criteria:
 
@@ -307,12 +307,12 @@ Acceptance criteria:
 
 ### Phase 7 — Commander relationships
 
-- [ ] Represent commander connections as graph paths rather than shared tag names.
-- [ ] Give direct commander producer/payoff relationships more weight than incidental shared abilities.
-- [ ] Scale tribal membership by actual tribal payoff support.
-- [ ] Separate “protects the commander” from “shares a theme with the commander.”
-- [ ] Prevent commander protection from exceeding its 30% cap.
-- [ ] Show the strongest commander connection and its evidence.
+- [x] Represent commander connections as graph paths rather than shared tag names.
+- [x] Give direct commander producer/payoff relationships more weight than incidental shared abilities.
+- [x] Scale tribal membership by actual tribal payoff support.
+- [x] Separate “protects the commander” from “shares a theme with the commander.”
+- [x] Prevent commander protection from exceeding its 30% cap.
+- [x] Show the strongest commander connection and its evidence.
 
 Acceptance criteria:
 
@@ -324,13 +324,13 @@ Acceptance criteria:
 - [x] Hide generic Sacrifice when a specific sacrificed-type effect is available.
 - [x] Hide redundant Artifact/Token count labels when a named token label is available.
 - [x] Hide generic Artifact/Token sacrifice labels when a named-token sacrifice label is available.
-- [ ] Replace raw internal tags with literal effect labels in card previews.
-- [ ] Show no more than the most important three or four effects by default.
-- [ ] Keep Roles in a separate section.
-- [ ] Group the synergy browser by engine family, then show specific effects within the preview.
-- [ ] Add an expandable “Why this connects” view for inferred graph paths.
-- [ ] Ensure ignored and boosted settings target stable engine IDs rather than display strings.
-- [ ] Migrate saved ignored/boosted tag preferences.
+- [x] Replace raw internal tags with literal effect labels in card previews.
+- [x] Show no more than the most important three or four effects by default.
+- [x] Keep Roles in a separate section.
+- [x] Group the synergy browser by engine family, then show specific effects within the preview.
+- [x] Add an expandable “Why this connects” view for inferred graph paths.
+- [x] Ensure ignored and boosted settings target stable engine IDs rather than display strings.
+- [x] Migrate saved ignored/boosted tag preferences.
 
 Acceptance criteria:
 
@@ -342,11 +342,11 @@ Acceptance criteria:
 - [x] Show engine balance in the Low Synergy explanation.
 - [x] Show direct effect-connection counts.
 - [x] Show percentage-based protections and the combined cap.
-- [ ] Show the top contributing interaction paths with card examples.
-- [ ] Show enabler supply, payoff demand, desired ratio, and card-side efficiency separately.
-- [ ] Explain why a surplus card lost protection.
-- [ ] Explain when an interaction was inferred rather than literally printed.
-- [ ] Keep the default popup concise and place technical detail behind expansion.
+- [x] Show the top contributing interaction paths with card examples.
+- [x] Show enabler supply, payoff demand, desired ratio, and card-side efficiency separately.
+- [x] Explain why a surplus card lost protection.
+- [x] Explain when an interaction was inferred rather than literally printed.
+- [x] Keep the default popup concise and place technical detail behind expansion.
 
 Acceptance criteria:
 
@@ -428,3 +428,8 @@ The migration is complete when:
 - 2026-09-16: Marked completed groundwork for percentage protections, engine balance, diminishing-return multi-engine protection, initial lifecycle signals, tag condensation, tag caching, and deferred rescoring.
 - 2026-09-16: Deferred Phase 0 and began Phase 1. Added the dedicated synergy-engine module, schema version, serializable analysis contract, typed subjects, events, directions, timing, quantities, zones, and signal serialization helpers. Existing lifecycle signals now consume the shared engine type.
 - 2026-09-16: Began Phase 2. Added paragraph-scoped, reminder-text-free structured extraction with evidence offsets, literal labels, subject/controller/quantity/destination parsing, ability-kind and timing classification, self-reference, and initial sacrifice, dies, LTB, token creation, draw, discard, recursion, granted death-return, removal, counterspell, tutor, life-gain, and life-loss detectors. Wired extracted lifecycle effects into live engine signals while retaining legacy scoring compatibility.
+- 2026-09-16: Began Phase 3. Added a data-driven relationship graph with transitive event expansion, parent token/artifact relationships, investigate-to-Clue creation, count-growth signals, graveyard stocking from discard/mill/surveil, graveyard consumer links, life-gain/loss listeners, cast/ETB/attack/combat event extraction, lifecycle implications, and Overload multi-target signals. Live engine connections now merge the graph output with legacy compatibility signals.
+- 2026-09-16: Completed Phase 4. Added the engine registry with stable IDs, labels, legacy aliases, enabler/payoff signal declarations, engine-specific desired ratios, dynamic typal definitions that require functional payoffs, and an explicit role-tag boundary. Live engine balance now consumes registry participation and ratios instead of hard-coded family rules.
+- 2026-09-16: Completed Phase 5. Engine supply and demand now use structured effect quantities, repeatability, multiple-use availability, optional/conditional/once-per-turn discounts, and multiplayer scaling. Added configurable scoring weights and parent-engine declarations to prevent named token effects from receiving duplicate Artifact/Token engine credit.
+- 2026-09-16: Completed Phase 6. Added the role registry with base targets, quality tags, comparison groups, declared theme drivers, bounded target adjustments, and explanation reasons. Replaced hard-coded Recursion and Mana Ramp branches in the live scorer with registry-calculated targets.
+- 2026-09-16: Completed Phase 7. Commander protection now prioritizes direct graph paths, separately recognizes functional commander protection, retains recurring sacrifice-fodder support, and treats shared themes as a weaker fallback. Typal overlap still requires complementary tribal functionality. The Low Synergy explanation now identifies the strongest commander connection, path details, and matched evidence while retaining the 30% commander cap.

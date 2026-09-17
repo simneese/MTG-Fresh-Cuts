@@ -160,11 +160,16 @@ function subjectFrom(text: string, card?: WorkspaceCard): EffectSubject {
     ) ||
     /^(?:it)\b/.test(text.trim()) ||
     Boolean(frontName && text.includes(frontName));
+  const qualifiers = [
+    selfReference ? 'self' : '',
+    kind === 'creature' && /\btokens?\b/.test(text) ? 'token' : '',
+    kind === 'token' && /\bcreatures?\b/.test(text) ? 'creature' : '',
+  ].filter(Boolean);
   return {
     kind,
     controller,
     tokenType,
-    qualifiers: selfReference ? ['self'] : undefined,
+    qualifiers: qualifiers.length ? qualifiers : undefined,
   };
 }
 
@@ -189,6 +194,15 @@ function addMatches(
   for (const match of paragraph.text.matchAll(pattern)) {
     const matchedText = match[0];
     const start = paragraph.sourceStart + (match.index ?? 0);
+    const quantity = quantityFrom(matchedText);
+    const prefix = paragraph.text.slice(0, match.index ?? 0);
+    if (
+      !quantity.scalesWithPlayers &&
+      /\beach (?:player|opponent)\b/.test(prefix)
+    ) {
+      quantity.scalesWithPlayers = true;
+      quantity.expected *= 3;
+    }
     effects.push({
       id: `${card.key ?? card.name}:${paragraph.index}:${detectorId}:${effects.length}`,
       label:
@@ -202,8 +216,22 @@ function addMatches(
       sourceZone: config.sourceZone,
       destinationZone: config.destinationZone,
       timing: timingFor(card, paragraph.text),
-      quantity: quantityFrom(matchedText),
-      conditions: [],
+      quantity,
+      conditions: [
+        /\btarget\b/.test(matchedText) ? 'target' : '',
+        card.cardData?.keywords?.some(
+          (keyword) => keyword.toLowerCase() === 'overload',
+        ) || /\boverload\b/.test(oracleTextWithoutReminderText(card))
+          ? 'overload'
+          : '',
+        /\bonly once (?:each|per) turn\b/.test(paragraph.text)
+          ? 'once-per-turn'
+          : '',
+        /\b(?:if|unless|as long as|only if)\b/.test(paragraph.text)
+          ? 'conditional'
+          : '',
+        /\b(?:you may|up to)\b/.test(matchedText) ? 'optional' : '',
+      ].filter(Boolean),
       evidence: [
         {
           detectorId,
@@ -425,6 +453,120 @@ export function extractCardEffects(card: WorkspaceCard): CardEffect[] {
         direction: 'emits',
         event: 'life-lost',
         subject: () => ({ kind: 'player', controller: 'opponent' }),
+      },
+    );
+    addMatches(
+      effects,
+      card,
+      paragraph,
+      'life-gain-trigger',
+      /\b(?:when|whenever|if)\b[^.\n]*\b(?:you|a player) gain(?:s)? life\b/g,
+      {
+        label: 'Life Gain Trigger',
+        direction: 'listens',
+        event: 'life-gained',
+        subject: () => ({ kind: 'player', controller: 'you' }),
+      },
+    );
+    addMatches(
+      effects,
+      card,
+      paragraph,
+      'life-loss-trigger',
+      /\b(?:when|whenever|if)\b[^.\n]*\b(?:an |each |target |your )?opponents? loses? life\b/g,
+      {
+        label: 'Opponent Life-Loss Trigger',
+        direction: 'listens',
+        event: 'life-lost',
+        subject: () => ({ kind: 'player', controller: 'opponent' }),
+      },
+    );
+    addMatches(
+      effects,
+      card,
+      paragraph,
+      'investigate',
+      /\binvestigates?\b/g,
+      {
+        label: 'Investigates',
+        direction: 'emits',
+        event: 'investigated',
+        subject: () => ({ kind: 'token', tokenType: 'clue' }),
+      },
+    );
+    addMatches(effects, card, paragraph, 'mill', /\bmills?\b[^.\n]*/g, {
+      label: 'Mills Cards',
+      direction: 'emits',
+      event: 'milled',
+      subject: () => ({ kind: 'card' }),
+      sourceZone: 'library',
+      destinationZone: 'graveyard',
+    });
+    addMatches(
+      effects,
+      card,
+      paragraph,
+      'surveil',
+      /\bsurveils?\b[^.\n]*/g,
+      {
+        label: 'Surveils',
+        direction: 'emits',
+        event: 'surveilled',
+        subject: () => ({ kind: 'card' }),
+        sourceZone: 'library',
+        destinationZone: 'graveyard',
+      },
+    );
+    addMatches(
+      effects,
+      card,
+      paragraph,
+      'cast-event',
+      /\b(?:cast|casts)\b[^.\n]*\b(?:spell|card|creature|artifact|instant|sorcery|enchantment)s?\b/g,
+      {
+        label: 'Casts Spells',
+        direction: /^\s*(?:when|whenever|if)\b/.test(paragraph.text)
+          ? 'listens'
+          : 'emits',
+        event: 'cast',
+      },
+    );
+    addMatches(
+      effects,
+      card,
+      paragraph,
+      'etb-event',
+      /\b(?:when|whenever|if)\b[^.\n]*\b(?:creatures?|artifacts?|enchantments?|lands?|permanents?|tokens?)\b[^.\n]*\benters?(?: the battlefield)?\b/g,
+      {
+        label: 'Enters-the-Battlefield Trigger',
+        direction: 'listens',
+        event: 'enters-battlefield',
+      },
+    );
+    addMatches(
+      effects,
+      card,
+      paragraph,
+      'attack-event',
+      /\b(?:when|whenever|if)\b[^.\n]*\b(?:creatures?|this creature|it)\b[^.\n]*\battacks?\b/g,
+      {
+        label: 'Attack Trigger',
+        direction: 'listens',
+        event: 'attacks',
+        subject: () => ({ kind: 'creature' }),
+      },
+    );
+    addMatches(
+      effects,
+      card,
+      paragraph,
+      'combat-damage-event',
+      /\b(?:when|whenever|if)\b[^.\n]*\b(?:creatures?|this creature|it)\b[^.\n]*\bdeals? combat damage\b/g,
+      {
+        label: 'Combat Damage Trigger',
+        direction: 'listens',
+        event: 'combat-damage',
+        subject: () => ({ kind: 'creature' }),
       },
     );
   }

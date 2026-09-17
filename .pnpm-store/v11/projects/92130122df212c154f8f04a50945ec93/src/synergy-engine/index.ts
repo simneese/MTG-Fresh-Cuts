@@ -9,6 +9,26 @@ export {
   oracleTextWithoutReminderText,
 } from './extract-effects';
 export type { OracleParagraph } from './extract-effects';
+export { buildEngineSignals, signalPathsBetween } from './relationship-graph';
+export {
+  ENGINE_SCORING_CONFIG,
+  dedupeEngineFamilies,
+  engineDefinitionForId,
+  engineDefinitions,
+  engineFamilyForLegacyTag,
+  engineParticipation,
+} from './engine-registry';
+export type { EngineDefinition } from './engine-registry';
+export {
+  ROLE_DEFINITIONS,
+  calculateRoleTargets,
+  roleDefinition,
+} from './role-registry';
+export type {
+  DeckRoleContext,
+  RoleDefinition,
+  RoleName,
+} from './role-registry';
 
 export type {
   CardEffect,
