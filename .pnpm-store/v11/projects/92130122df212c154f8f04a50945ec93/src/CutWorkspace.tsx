@@ -305,53 +305,7 @@ function engineSignalsFor(
   card: WorkspaceCard,
   effects: CardEffect[] = extractCardEffects(card),
 ): EngineSignals {
-  const text = oracleTextForTagging(card);
-  const emits = new Set<string>();
-  const listens = new Set<string>();
-  const sacrifice = sacrificeAmounts(card);
-  if ((sacrifice.amounts.get('creature') ?? 0) > 0) {
-    emits.add('creature-sacrificed');
-    emits.add('creature-dies');
-    emits.add('creature-ltb');
-  }
-  if ((sacrifice.amounts.get('token') ?? 0) > 0) {
-    emits.add('token-sacrificed');
-    emits.add('token-ltb');
-  }
-  if (/\bdestroy\b[^.\n]*\bcreatures?\b/.test(text)) {
-    emits.add('creature-dies');
-    emits.add('creature-ltb');
-  }
-  if (/\b(?:exile|return)\b[^.\n]*\bcreatures?\b/.test(text))
-    emits.add('creature-ltb');
-  if (
-    /\b(?:when|whenever|if)\b[^.\n]*\bcreatures?\b[^.\n]*\bdies?\b|\bcreature (?:card )?is put into [^.\n]*graveyard from the battlefield\b/.test(
-      text,
-    )
-  )
-    listens.add('creature-dies');
-  if (
-    /\b(?:when|whenever|if)\b[^.\n]*\b(?:player|you|opponent)\b[^.\n]*\bsacrifices?\b[^.\n]*\bcreatures?\b|\bwhenever you sacrifice\b[^.\n]*\bcreatures?\b/.test(
-      text,
-    )
-  )
-    listens.add('creature-sacrificed');
-  if (
-    /\b(?:when|whenever|if)\b[^.\n]*\btokens?\b[^.\n]*\bleaves? the battlefield\b/.test(
-      text,
-    )
-  )
-    listens.add('token-ltb');
-  if (
-    /\b(?:when|whenever|if)\b[^.\n]*\bcreatures?\b[^.\n]*\bleaves? the battlefield\b/.test(
-      text,
-    )
-  )
-    listens.add('creature-ltb');
-  const structuredSignals = buildEngineSignals(effects);
-  structuredSignals.emits.forEach((signal) => emits.add(signal));
-  structuredSignals.listens.forEach((signal) => listens.add(signal));
-  return { emits, listens };
+  return buildEngineSignals(effects);
 }
 function signalsConnect(first: EngineSignals, second: EngineSignals) {
   return (
@@ -393,14 +347,52 @@ function isSelfRecurringCreature(card: WorkspaceCard) {
     )
   );
 }
+const CARDINAL_NUMBERS: Record<string, number> = {
+  a: 1,
+  an: 1,
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+};
+export function selfRecurringSacrificeCapacity(card: WorkspaceCard) {
+  if (!isSelfRecurringCreature(card)) return 0;
+  const text = oracleTextForTagging(card);
+  const initialCounters = text.match(
+    /\benters with (a|an|one|two|three|four|five|six|seven|eight|nine|ten|\d+) ([a-z-]+) counters? on it\b/,
+  );
+  if (initialCounters) {
+    const counterName = initialCounters[2];
+    const hasCounterLimitedReturn = new RegExp(
+      `\\bwhen this creature dies\\b[^.]*\\bhad (?:a|an) ${counterName} counter\\b[^.]*\\breturn it to the battlefield with one fewer ${counterName} counter`,
+    ).test(text);
+    if (hasCounterLimitedReturn) {
+      const counterCount =
+        CARDINAL_NUMBERS[initialCounters[1]] ?? Number(initialCounters[1]);
+      // The original body plus one additional body for every successful return.
+      return counterCount + 1;
+    }
+  }
+  return 1;
+}
 function previewImage(uri?: string) {
   return uri?.replace('/normal/', '/large/');
 }
-function cardFillsRole(card: WorkspaceCard, role: RoleName, tags: string[]) {
+export function cardFillsRole(
+  card: WorkspaceCard,
+  role: RoleName,
+  tags: string[],
+) {
   const text = oracleTextForTagging(card);
   if (role === 'Tutor') return tags.includes('tutor');
   if (role === 'Board wipe')
-    return /\b(?:destroy|exile) all\b|\ball (?:creatures|artifacts|enchantments|permanents)\b[^.]*\b(?:destroyed|exiled)\b/.test(
+    return /\b(?:destroy|exile) all\b|\ball (?:creatures|artifacts|enchantments|permanents)\b[^.]*\b(?:destroyed|exiled)\b|\bfor each (?:creature|artifact|enchantment|land|permanent|planeswalker|battle|token)\b[^,.;]*,\s*(?:its|their) controller sacrifices it\b/.test(
       text,
     );
   if (role === 'Removal') return tags.includes('removal');
@@ -479,7 +471,7 @@ const synergyTagCache = new WeakMap<
   WorkspaceCard,
   { knownTypesKey: string; tags: string[] }
 >();
-function synergyTags(card?: WorkspaceCard, knownTypes: string[] = []) {
+export function synergyTags(card?: WorkspaceCard, knownTypes: string[] = []) {
   if (!card) return [];
   const knownTypesKey = knownTypes.join('\u0000');
   const cached = synergyTagCache.get(card);
@@ -623,7 +615,7 @@ function synergyTags(card?: WorkspaceCard, knownTypes: string[] = []) {
   if (/\bput (?:a|one|two|three|\d+) \+1\/\+1 counters?/.test(text))
     tags.add('+1/+1 counters');
   if (
-    /\b(?:return|put) [^.]*\b(?:from|in) (?:your|a|any|an opponent'?s|target player'?s) graveyard\b[^.]*(?:\bto|\bon|\bonto) (?:(?:your hand|the battlefield)|(?:the )?top of (?:your|its owner'?s|that player'?s|their) library)|\bgraveyard to (?:your hand|the battlefield|the top of your library)|\b(?:put|placed) into (?:your|a) graveyard from the battlefield\b[^.]*\breturn (?:this card|this creature|it|[^.]+?)\b[^.]*(?:\bto|\bonto) (?:your hand|the battlefield|the top of your library)|\b(?:you may )?cast [^.]*\bfrom (?:your|a|any) graveyard\b|\bthis (?:card|creature|spell) may be cast from (?:your|a|any) graveyard\b/.test(
+    /\b(?:return|put) [^.]*\b(?:from|in) (?:your|a|any|an opponent'?s|target player'?s) graveyard\b[^.]*(?:\bto|\bon|\bonto) (?:(?:your hand|the battlefield)|(?:the )?top of (?:your|its owner'?s|that player'?s|their) library)|\bgraveyard to (?:your hand|the battlefield|the top of your library)|\b(?:put|placed) into (?:your|a) graveyard from the battlefield\b[^.]*\breturn (?:this card|this creature|it|[^.]+?)\b[^.]*(?:\bto|\bonto) (?:your hand|the battlefield|the top of your library)|\b(?:you may )?cast [^.]*\bfrom (?:your|a|any) graveyard\b|\bthis (?:card|creature|spell) may be cast from (?:your|a|any) graveyard\b|\benchant creature card in (?:a|the) graveyard\b[\s\S]*\breturn enchanted creature card to the battlefield\b/.test(
       text,
     )
   )
@@ -639,6 +631,13 @@ function synergyTags(card?: WorkspaceCard, knownTypes: string[] = []) {
   const forcesOtherPlayerSacrifice =
     /\b(?:each player|each opponent|target (?:player|opponent)|an opponent|that player|its controller)\b[^.\n]*\bsacrifices?\b[^.\n]*\b(?:artifact|creature|enchantment|land|permanent|planeswalker|battle|token)s?\b/.test(
       text,
+    ) ||
+    /\bfor each (?:creature|artifact|enchantment|land|permanent|planeswalker|battle|token)\b[^,.;]*,\s*(?:its|their) controller sacrifices it\b/.test(
+      text,
+    );
+  const isMassRemoval =
+    /\b(?:destroy|exile) all\b|\ball (?:creatures|artifacts|enchantments|permanents)\b[^.]*\b(?:destroyed|exiled)\b|\bfor each (?:creature|artifact|enchantment|land|permanent|planeswalker|battle|token)\b[^,.;]*,\s*(?:its|their) controller sacrifices it\b/.test(
+      text,
     );
   if (
     /\b(?:destroy|exile) (?:target|all|each)\b|\beach player (?:destroys|exiles)\b|deals? \d+ damage to any target/.test(
@@ -646,6 +645,7 @@ function synergyTags(card?: WorkspaceCard, knownTypes: string[] = []) {
     ) || forcesOtherPlayerSacrifice
   )
     tags.add('removal');
+  if (isMassRemoval) tags.add('board wipe');
   const isCounterspell =
     /\bcounter (?:target|all|each|that) [^.]*\b(?:spells?|abilit(?:y|ies))\b|\bwhenever you counter\b|\bspells? (?:is|are|was|were) countered\b/.test(
       text,
@@ -826,6 +826,11 @@ function synergyTags(card?: WorkspaceCard, knownTypes: string[] = []) {
     if (new RegExp(`\\b(?:${escaped}|${plurals})\\b`, 'i').test(text))
       tags.add(`type: ${type}`);
   });
+  extractCardEffects(card).forEach((effect) =>
+    effect.subject.creatureTypes?.forEach((type) =>
+      tags.add(`type: ${type}`),
+    ),
+  );
   const result = [...tags];
   synergyTagCache.set(card, { knownTypesKey, tags: result });
   return result;
@@ -1347,12 +1352,19 @@ function tagModifier(card: WorkspaceCard, tag: string) {
   const sacrificeAmount = sacrificeSynergyAmount(card, tag);
   const overloadAmount = overloadMultiEffectAmount(card, tag);
   const modalAmount = modalMultiEffectAmount(card, tag);
+  const recurringFodderAmount =
+    tag === 'sacrifice' ||
+    tag === 'type-event: creature sacrificed' ||
+    tag === 'type-event: creature dies'
+      ? selfRecurringSacrificeCapacity(card)
+      : 0;
   const amount = Math.max(
     countAmount,
     rampAmount,
     sacrificeAmount,
     overloadAmount,
     modalAmount,
+    recurringFodderAmount,
   );
   const timing = repeatabilityForSynergy(card, tag);
   const repeatable = timing.repeatable;
@@ -1379,7 +1391,9 @@ function tagModifier(card: WorkspaceCard, tag: string) {
     scalingBonus +
     destinationBonus;
   const baseLabel =
-    sacrificeAmount > 0
+    recurringFodderAmount > 1
+      ? 'recurring sacrifice fodder'
+      : sacrificeAmount > 0
       ? 'enabler'
       : countAmount > 0 || rampAmount > 0
         ? 'producer'
@@ -1419,7 +1433,7 @@ function roleQualityModifier(card: WorkspaceCard, role: RoleName) {
   );
 }
 type SynergyRole = 'producer' | 'enabler' | 'payoff' | 'neutral';
-function creatureTypeSynergyRoles(card: WorkspaceCard, tag: string) {
+export function creatureTypeSynergyRoles(card: WorkspaceCard, tag: string) {
   const type = tag.startsWith('type: ') ? tag.slice(6) : '';
   if (!type) return { enabler: false, payoff: false };
   const text = oracleTextForTagging(card);
@@ -1539,7 +1553,7 @@ function synergyRole(card: WorkspaceCard, tag: string): SynergyRole {
   }
   return 'neutral';
 }
-function synergyPreviewRoles(card: WorkspaceCard, tag: string) {
+export function synergyPreviewRoles(card: WorkspaceCard, tag: string) {
   const text = oracleTextForTagging(card);
   if (tag.startsWith('type: ')) return creatureTypeSynergyRoles(card, tag);
   const producer = countSynergyProductionAmount(card, tag) > 0;
@@ -1587,10 +1601,10 @@ function synergyPreviewRoles(card: WorkspaceCard, tag: string) {
       lifeEnabler ||
       Boolean(drain?.enabler) ||
       (creatureDeathTag &&
-        sacrificeSynergyAmount(
+        (sacrificeSynergyAmount(
           card,
           'type-event: creature sacrificed',
-        ) > 0),
+        ) > 0 || selfRecurringSacrificeCapacity(card) > 1)),
     payoff:
       payoff ||
       Boolean(drain?.payoff) ||
@@ -2581,8 +2595,11 @@ export default function CutWorkspace({
         selfRecurringSacrificeFodder && commanderSupportsSacrifice ? 0.9 : 0;
       const commanderConnectionCandidates = [
         {
-          kind: 'direct engine path',
-          score: directCommanderConnection,
+          kind: 'indirect commander interaction',
+          // Effect paths that are already represented by a shared engine belong
+          // to engine balance. Only paths with no shared engine remain eligible
+          // for the separate commander-protection term.
+          score: sharedCommanderTags.length ? 0 : directCommanderConnection,
           detail: directCommanderPaths.map(displaySignal).join(', '),
           evidence: directCommanderEvidence ?? '',
         },
@@ -2600,13 +2617,16 @@ export default function CutWorkspace({
         },
         {
           kind: 'shared theme',
-          score: sharedTagCommanderConnection,
+          // Shared themes are scored through commander-backed engine supply.
+          score: 0,
           detail: sharedCommanderTags.map(displayTag).join(', '),
           evidence: '',
         },
         {
           kind: 'recurring sacrifice fodder',
-          score: sacrificeCommanderConnection,
+          // Recurring fodder is participation in the sacrifice engine, not an
+          // independent commander-protection relationship.
+          score: 0,
           detail: sacrificeCommanderConnection
             ? 'Returns for a sacrifice-focused commander'
             : '',
@@ -2696,6 +2716,12 @@ export default function CutWorkspace({
         family: string,
         side: 'enabler' | 'payoff',
       ) => {
+        // A commander is reliably available from the command zone and can be
+        // recast, so direct engine participation is worth two ordinary card
+        // units. This is deliberately accounted for here rather than again in
+        // the separate indirect commander-protection calculation.
+        const commanderAvailabilityMultiplier =
+          candidate.name === commander ? 2 : 1;
         const matchingEffects = (
           structuredEffectsByCard.get(keyOf(candidate)) ?? []
         ).filter((effect) => {
@@ -2707,7 +2733,7 @@ export default function CutWorkspace({
         });
         if (!matchingEffects.length)
           return familyRolesFor(candidate, family)[side]
-            ? candidate.quantity
+            ? candidate.quantity * commanderAvailabilityMultiplier
             : 0;
         const effectWeight = matchingEffects.reduce((sum, effect) => {
           const quantity =
@@ -2736,7 +2762,11 @@ export default function CutWorkspace({
             : 1;
           return sum + quantity * availability * repeatability * multiUse;
         }, 0);
-        return effectWeight * candidate.quantity;
+        return (
+          effectWeight *
+          candidate.quantity *
+          commanderAvailabilityMultiplier
+        );
       };
       const enginePrevalence = Math.min(
         1,
@@ -2757,6 +2787,8 @@ export default function CutWorkspace({
             balance: 0,
             enablers: 0,
             payoffs: 0,
+            commanderEnablerContribution: 0,
+            commanderPayoffContribution: 0,
             efficiency: 0,
             desiredRatio: engineDefinitionForId(tag)?.desiredEnablersPerPayoff ?? 2,
             supplyBalance: 0,
@@ -2780,6 +2812,12 @@ export default function CutWorkspace({
             sum + familyContributionFor(candidate, tag, 'payoff'),
           0,
         );
+        const commanderEnablerContribution = commanderCard
+          ? familyContributionFor(commanderCard, tag, 'enabler')
+          : 0;
+        const commanderPayoffContribution = commanderCard
+          ? familyContributionFor(commanderCard, tag, 'payoff')
+          : 0;
         // Two enablers per payoff is a healthy default engine shape. Once one
         // side exceeds what the other can use, cards on the surplus side lose
         // protection instead of being sheltered merely for sharing the tag.
@@ -2837,6 +2875,8 @@ export default function CutWorkspace({
           balance: supplyBalance * efficiency,
           enablers,
           payoffs,
+          commanderEnablerContribution,
+          commanderPayoffContribution,
           efficiency,
           desiredRatio,
           supplyBalance,
@@ -3387,7 +3427,7 @@ export default function CutWorkspace({
                 },
               ],
           summary:
-            'Curve, low synergy, price when enabled, and popularity are weighted and added. Commander protection is already contained within the reworked synergy score.',
+            'Curve, low synergy, price when enabled, and popularity are weighted and added. Commander-backed engine participation and separate indirect commander protection are already contained within the reworked synergy score.',
         },
       ] as const)
     : [];
@@ -3430,6 +3470,8 @@ export default function CutWorkspace({
         .slice(0, 4)
     : [];
   function engineForEffect(effect: CardEffect) {
+    if (effect.subject.creatureTypes?.length)
+      return `engine:type:${effect.subject.creatureTypes[0]}`;
     const signals = buildEngineSignals([effect]);
     return dedupeEngineFamilies(
       engineDefinitions()
@@ -4407,14 +4449,38 @@ export default function CutWorkspace({
                                     <span className="font-mono text-lime-300">{Math.round(entry.balance * 100)}%</span>
                                   </div>
                                   <p className="mt-1 text-zinc-400">
-                                    Supply {entry.enablers.toFixed(1)} enablers / {entry.payoffs.toFixed(1)} payoffs; desired ratio {entry.desiredRatio}:1.
+                                    Weighted supply {entry.enablers.toFixed(1)} enabler units / {entry.payoffs.toFixed(1)} payoff units; desired ratio {entry.desiredRatio}:1.
                                   </p>
+                                  {(entry.commanderEnablerContribution > 0 ||
+                                    entry.commanderPayoffContribution > 0) && (
+                                    <p className="mt-1 text-lime-200/80">
+                                      Commander-backed engine contribution:{' '}
+                                      {entry.commanderEnablerContribution > 0
+                                        ? `${entry.commanderEnablerContribution.toFixed(1)} persistent enabler units`
+                                        : ''}
+                                      {entry.commanderEnablerContribution > 0 &&
+                                      entry.commanderPayoffContribution > 0
+                                        ? ' and '
+                                        : ''}
+                                      {entry.commanderPayoffContribution > 0
+                                        ? `${entry.commanderPayoffContribution.toFixed(1)} persistent payoff units`
+                                        : ''}
+                                      . This contribution is included in engine protection and is not counted again as indirect commander protection.
+                                    </p>
+                                  )}
                                   <p className="mt-1 text-zinc-400">
                                     This card is {entry.side}. Quality {entry.cardQuality.toFixed(2)} versus {entry.averageQuality.toFixed(2)} average (×{entry.efficiency.toFixed(2)} efficiency).
                                   </p>
                                   {(entry.supplyBalance < 0.999 || entry.efficiency < 0.999) && (
                                     <p className="mt-1 text-amber-200/80">
-                                      Protection reduced because the {entry.side} side is {entry.supplyBalance < 0.999 ? 'oversupplied' : 'balanced but this card is less efficient than comparable pieces'}{entry.supplyBalance < 0.999 && entry.efficiency < 0.999 ? ' and this card is below the side average' : ''}.
+                                      {entry.supplyBalance < 0.999
+                                        ? entry.side === 'payoff'
+                                          ? `Payoff protection is reduced because the engine currently provides ${entry.enablers.toFixed(1)} of the ${(entry.payoffs * entry.desiredRatio).toFixed(1)} weighted enabler units needed to fully support its payoff strength. This means the payoff is under-supported; it does not mean there are multiple payoff cards.`
+                                          : `Enabler protection is reduced because ${entry.enablers.toFixed(1)} weighted enabler units exceed the ${(entry.payoffs * entry.desiredRatio).toFixed(1)} units the current payoffs can fully use.`
+                                        : 'Protection is reduced because this card is less efficient than comparable pieces.'}
+                                      {entry.supplyBalance < 0.999 && entry.efficiency < 0.999
+                                        ? ' This card is also below the side average.'
+                                        : ''}
                                     </p>
                                   )}
                                 </section>
@@ -4423,7 +4489,7 @@ export default function CutWorkspace({
                             <section className="rounded-lg bg-white/[0.04] p-2">
                               <p className="font-medium text-white">Protection calculation</p>
                               <p className="mt-1 text-zinc-400">
-                                Engine {Math.round(focused.scoreBreakdown.engineProtectionRate * 100)}% · Efficiency {Math.round(focused.scoreBreakdown.efficiencyProtectionRate * 100)}% · Commander {Math.round(focused.scoreBreakdown.commanderProtectionRate * 100)}% · Combined {Math.round(focused.scoreBreakdown.combinedProtectionRate * 100)}%.
+                                Engine {Math.round(focused.scoreBreakdown.engineProtectionRate * 100)}% · Efficiency {Math.round(focused.scoreBreakdown.efficiencyProtectionRate * 100)}% · Indirect commander {Math.round(focused.scoreBreakdown.commanderProtectionRate * 100)}% · Combined {Math.round(focused.scoreBreakdown.combinedProtectionRate * 100)}%.
                               </p>
                               <p className="mt-1 font-mono text-zinc-300">
                                 {Math.round(focused.scoreBreakdown.synergyBeforeProtections * 100)} × (1 − {focused.scoreBreakdown.combinedProtectionRate.toFixed(2)}) = {Math.round(focused.synergy * 100)}

@@ -30,4 +30,32 @@ describe('relationship graph implications', () => {
     expect(result.emits).toContain('creature-leaves-battlefield');
     expect(result.emits).not.toContain('creature-dies');
   });
+
+  it('does not translate graveyard recursion into leaving the battlefield', () => {
+    const result = signals(
+      'Return target creature card from your graveyard to the battlefield.',
+    );
+    expect(result.emits).toContain('creature-enters-battlefield');
+    expect(result.emits).not.toContain('creature-leaves-battlefield');
+    expect(result.emits).not.toContain('creature-dies');
+  });
+
+  it('marks a creature that casts itself from the graveyard as recurring fodder', () => {
+    const card = fixtureCard(
+      'Gravecrawler',
+      'You may cast Gravecrawler from your graveyard as long as you control a Zombie.',
+      'Creature — Zombie',
+    );
+    const result = buildEngineSignals(extractCardEffects(card));
+    expect(result.emits).toContain('self-recurring-creature');
+  });
+
+  it('does not treat typal condition metadata as creature creation', () => {
+    const result = signals(
+      'If equipped creature is a Vampire, put two +1/+1 counters on it instead.',
+    );
+    expect(result.listens).toContain('type:vampire-present');
+    expect(result.listens).not.toContain('creature-created');
+    expect(result.listens).not.toContain('creature-count-increased');
+  });
 });

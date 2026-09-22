@@ -2,6 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { extractCardEffects } from '../src/synergy-engine/extract-effects';
 import { buildEngineSignals } from '../src/synergy-engine/relationship-graph';
 import { fixtureCard } from './fixtures';
+import {
+  cardFillsRole,
+  creatureTypeSynergyRoles,
+  selfRecurringSacrificeCapacity,
+  synergyPreviewRoles,
+  synergyTags,
+} from '../src/CutWorkspace';
 
 const effectsFor = (name: string, text: string, type?: string) =>
   extractCardEffects(fixtureCard(name, text, type));
@@ -57,6 +64,29 @@ describe('corrected named card regressions', () => {
     expect(recursion?.label).toBe('Casts from Graveyard');
   });
 
+  it('Nine-Lives Familiar exposes all counter-limited sacrifice bodies', () => {
+    const card = fixtureCard(
+      'Nine-Lives Familiar',
+      'This creature enters with eight revival counters on it if you cast it.\nWhen this creature dies, if it had a revival counter on it, return it to the battlefield with one fewer revival counter on it at the beginning of the next end step.',
+      'Creature — Cat',
+    );
+    const effects = extractCardEffects(card);
+    const selfReturn = effects.find(
+      (effect) =>
+        effect.evidence[0].detectorId === 'counter-limited-self-return',
+    );
+    expect(selfReturn).toMatchObject({
+      sourceZone: 'graveyard',
+      destinationZone: 'battlefield',
+      quantity: { expected: 8 },
+      timing: { repeatable: true, multiUsePerTurn: false },
+    });
+    expect(selfRecurringSacrificeCapacity(card)).toBe(9);
+    expect(
+      synergyPreviewRoles(card, 'type-event: creature dies').enabler,
+    ).toBe(true);
+  });
+
   it('Mushroom Watchdogs is not instant-speed', () => {
     const effects = effectsFor('Mushroom Watchdogs', '{1}, Sacrifice a Food: Draw a card. Activate only as a sorcery.');
     expect(effects.find((effect) => effect.event === 'sacrificed')?.timing.instantSpeed).toBe(false);
@@ -70,5 +100,89 @@ describe('corrected named card regressions', () => {
   it('Swarmyard exposes regeneration as creature protection', () => {
     const effects = effectsFor('Swarmyard', '{T}: Add {C}.\n{T}: Regenerate target Insect, Rat, Spider, or Squirrel.', 'Land');
     expect(effects.some((effect) => effect.label === 'Protects Creature')).toBe(true);
+  });
+
+  it('Killing Wave resolves “it” to each creature and scales the sacrifice', () => {
+    const effects = effectsFor(
+      'Killing Wave',
+      'For each creature, its controller sacrifices it unless they pay X life.',
+      'Sorcery',
+    );
+    const sacrifice = effects.find((effect) => effect.event === 'sacrificed');
+    expect(sacrifice?.label).toBe('Sacrifices Creature');
+    expect(sacrifice?.subject.kind).toBe('creature');
+    expect(sacrifice?.quantity.unbounded).toBe(true);
+    expect(buildEngineSignals(effects).emits).toEqual(
+      expect.objectContaining(
+        new Set([
+          'creature-sacrificed',
+          'creature-dies',
+          'creature-leaves-battlefield',
+        ]),
+      ),
+    );
+    expect(
+      cardFillsRole(
+        fixtureCard(
+          'Killing Wave',
+          'For each creature, its controller sacrifices it unless they pay X life.',
+          'Sorcery',
+        ),
+        'Board wipe',
+        ['removal', 'board wipe'],
+      ),
+    ).toBe(true);
+  });
+
+  it('Animate Dead links its graveyard Aura target, returned creature, and later sacrifice', () => {
+    const text =
+      'Enchant creature card in a graveyard\nWhen this Aura enters, if it’s on the battlefield, it loses “enchant creature card in a graveyard” and gains “enchant creature put onto the battlefield with this Aura.” Return enchanted creature card to the battlefield under your control and attach this Aura to it. When this Aura leaves the battlefield, that creature’s controller sacrifices it.\nEnchanted creature gets -1/-0.';
+    const effects = effectsFor('Animate Dead', text, 'Enchantment — Aura');
+    const recursion = effects.find(
+      (effect) => effect.evidence[0].detectorId === 'aura-recursion',
+    );
+    const sacrifice = effects.find(
+      (effect) =>
+        effect.event === 'sacrificed' && effect.subject.kind === 'creature',
+    );
+    expect(recursion).toMatchObject({
+      sourceZone: 'graveyard',
+      destinationZone: 'battlefield',
+      subject: { kind: 'creature' },
+    });
+    expect(recursion?.evidence[0].inferred).toBe(true);
+    expect(sacrifice?.label).toBe('Sacrifices Creature');
+    expect(buildEngineSignals(effects).emits).toEqual(
+      expect.objectContaining(
+        new Set([
+          'creature-returned',
+          'creature-sacrificed',
+          'creature-dies',
+          'creature-leaves-battlefield',
+        ]),
+      ),
+    );
+  });
+
+  it('Blade of the Bloodchief is a Vampire typal payoff without being a Vampire', () => {
+    const card = fixtureCard(
+      'Blade of the Bloodchief',
+      'Whenever a creature dies, put a +1/+1 counter on equipped creature. If equipped creature is a Vampire, put two +1/+1 counters on it instead.\nEquip {1}',
+      'Artifact — Equipment',
+    );
+    const effects = extractCardEffects(card);
+    const typal = effects.find(
+      (effect) => effect.evidence[0].detectorId === 'typal-conditional-bonus',
+    );
+    expect(typal).toMatchObject({
+      label: 'Vampire Typal Bonus',
+      direction: 'listens',
+      subject: { kind: 'creature', creatureTypes: ['vampire'] },
+    });
+    expect(synergyTags(card, [])).toContain('type: vampire');
+    expect(creatureTypeSynergyRoles(card, 'type: vampire')).toEqual({
+      enabler: false,
+      payoff: true,
+    });
   });
 });

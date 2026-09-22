@@ -48,13 +48,31 @@ function subjectNames(effect: CardEffect) {
 
 function directSignals(effect: CardEffect) {
   const signals = new Set<string>();
+  effect.subject.creatureTypes?.forEach((type) =>
+    signals.add(`type:${type}-present`),
+  );
+  const detectorId = effect.evidence[0]?.detectorId ?? '';
+  const isTypalMetadata = detectorId.startsWith('typal-');
   if (effect.event === 'investigated') {
     signals.add('investigated');
     return signals;
   }
-  subjectNames(effect).forEach((subject) =>
-    signals.add(`${subject}-${effect.event}`),
-  );
+  if (!isTypalMetadata)
+    subjectNames(effect).forEach((subject) =>
+      signals.add(`${subject}-${effect.event}`),
+    );
+  if (
+    effect.sourceZone === 'graveyard' &&
+    effect.destinationZone === 'battlefield'
+  )
+    subjectNames(effect).forEach((subject) =>
+      signals.add(`${subject}-enters-battlefield`),
+    );
+  if (
+    effect.sourceZone === 'graveyard' &&
+    effect.subject.qualifiers?.includes('self')
+  )
+    signals.add('self-recurring-creature');
   if (effect.event === 'life-gained') signals.add('life-gained');
   if (effect.event === 'life-lost') signals.add('opponent-life-lost');
   return signals;
@@ -90,8 +108,8 @@ function impliedSignals(signal: string) {
       implied.add('token-leaves-battlefield');
     }
   }
-  if (signal.endsWith('-exiled') || signal.endsWith('-returned')) {
-    const subject = signal.replace(/-(?:exiled|returned)$/, '');
+  if (signal.endsWith('-exiled')) {
+    const subject = signal.replace(/-exiled$/, '');
     implied.add(`${subject}-leaves-battlefield`);
     if (!['card', 'player', 'spell'].includes(subject))
       implied.add('permanent-leaves-battlefield');

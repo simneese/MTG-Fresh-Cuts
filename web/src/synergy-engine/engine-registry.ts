@@ -33,6 +33,7 @@ const definitions: EngineDefinition[] = [
       'creature-dies',
       'creature-leaves-battlefield',
       'token-leaves-battlefield',
+      'self-recurring-creature',
     ],
     payoffSignals: [
       '*-sacrificed',
@@ -168,8 +169,8 @@ export function engineDefinitionForId(id: string) {
       label: `${type.replace(/\b\w/g, (letter) => letter.toUpperCase())} Typal`,
       desiredEnablersPerPayoff: 3,
       legacyTags: [`type: ${type}`],
-      enablerSignals: [],
-      payoffSignals: [],
+      enablerSignals: [`type:${type}-present`],
+      payoffSignals: [`type:${type}-present`],
       requiresFunctionalPayoff: true,
     } satisfies EngineDefinition;
   }

@@ -396,13 +396,13 @@ Required named fixtures:
 
 ### Phase 12 — Legacy removal and tuning
 
-- [ ] Run new and legacy scoring side by side on all fixtures.
-- [ ] Review the largest score changes manually.
+- [x] Run new and legacy scoring side by side on all fixtures.
+- [x] Review the largest score changes manually.
 - [ ] Tune weights using deck-level outcomes, not individual-card exceptions.
 - [ ] Remove obsolete tag aliases from scoring.
-- [ ] Remove obsolete parsing branches after equivalent structured detectors are tested.
-- [ ] Increment the analysis schema version and invalidate stale cached analysis.
-- [ ] Document the final formula in product-facing help text.
+- [x] Remove obsolete parsing branches after equivalent structured detectors are tested.
+- [x] Increment the analysis schema version and invalidate stale cached analysis.
+- [x] Document the final formula in product-facing help text.
 
 Acceptance criteria:
 
@@ -433,3 +433,4 @@ The migration is complete when:
 - 2026-09-16: Completed Phase 5. Engine supply and demand now use structured effect quantities, repeatability, multiple-use availability, optional/conditional/once-per-turn discounts, and multiplayer scaling. Added configurable scoring weights and parent-engine declarations to prevent named token effects from receiving duplicate Artifact/Token engine credit.
 - 2026-09-16: Completed Phase 6. Added the role registry with base targets, quality tags, comparison groups, declared theme drivers, bounded target adjustments, and explanation reasons. Replaced hard-coded Recursion and Mana Ramp branches in the live scorer with registry-calculated targets.
 - 2026-09-16: Completed Phase 7. Commander protection now prioritizes direct graph paths, separately recognizes functional commander protection, retains recurring sacrifice-fodder support, and treats shared themes as a weaker fallback. Typal overlap still requires complementary tribal functionality. The Low Synergy explanation now identifies the strongest commander connection, path details, and matched evidence while retaining the 30% commander cap.
+- 2026-09-22: Began Phase 12. Added a structured-versus-legacy audit for every named regression fixture, removed the legacy regex signal overlay from live graph construction, corrected graveyard recursion so it no longer implies leaving the battlefield, introduced an explicit self-recurring-creature signal for sacrifice fodder, bumped the analysis schema to v2, and documented the production scoring formula. Legacy display-tag scoring and final deck-level weight tuning remain open.

@@ -5,6 +5,9 @@ import { fixtureCard } from './fixtures';
 const detectorCases = [
   ['sacrifice-effect', 'Sacrifice a creature: Draw a card.'],
   ['dies-trigger', 'Whenever another creature dies, draw a card.'],
+  ['typal-conditional-bonus', 'If equipped creature is a Vampire, put two counters on it instead.'],
+  ['typal-group-bonus', 'Other Vampires you control get +1/+1.'],
+  ['typal-event-payoff', 'Whenever another Vampire dies, draw a card.'],
   ['named-token-payoff', 'Other Clues you control become creatures.'],
   ['improvise', 'Nonartifact spells you cast have improvise.'],
   ['overload-target', 'Target artifact becomes a creature. Overload {4}{U}{U}.'],

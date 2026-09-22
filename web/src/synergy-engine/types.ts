@@ -1,4 +1,6 @@
-export const SYNERGY_ANALYSIS_SCHEMA_VERSION = 1;
+// Version 2 removes the legacy regex signal overlay. Cached v1 analysis must
+// be rebuilt so all engine connections originate in structured effects.
+export const SYNERGY_ANALYSIS_SCHEMA_VERSION = 2;
 
 export type EffectZone =
   | 'library'

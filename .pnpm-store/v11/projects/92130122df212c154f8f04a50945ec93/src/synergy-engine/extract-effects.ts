@@ -30,6 +30,10 @@ const NUMBER_WORDS: Record<string, number> = {
   four: 4,
   five: 5,
   six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
 };
 
 const NAMED_TOKENS: NamedTokenType[] = [
@@ -272,6 +276,25 @@ function addMatches(
   }
 }
 
+function sacrificeSubjectText(
+  match: RegExpMatchArray,
+  paragraph: OracleParagraph,
+) {
+  const subject = match[1] || match[2] || '';
+  if (!/^it\b/.test(subject)) return subject;
+  const prefix = paragraph.text.slice(0, match.index ?? 0);
+  const linkedSubject = prefix.match(
+    /\b(?:that|enchanted|target) (creature|artifact|enchantment|land|permanent|planeswalker|battle|token)(?:['’]s)? controller\s*$/,
+  )?.[1];
+  return linkedSubject ?? subject;
+}
+
+function singularCreatureType(type: string) {
+  if (type.endsWith('ves')) return `${type.slice(0, -3)}f`;
+  if (type.endsWith('ies')) return `${type.slice(0, -3)}y`;
+  return type.endsWith('s') ? type.slice(0, -1) : type;
+}
+
 const effectCache = new Map<string, CardEffect[]>();
 const MAX_EFFECT_CACHE_ENTRIES = 4000;
 
@@ -292,16 +315,20 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
       card,
       paragraph,
       'sacrifice-effect',
-      /\bsacrific(?:e|es)\s+([^:.;\n]+)/g,
+      /\b(?:for each (artifact|creature|enchantment|land|permanent|planeswalker|battle|token)[^,.;\n]*,\s*(?:its|their) controller\s+)?sacrific(?:e|es)\s+([^:.;\n]+)/g,
       {
         label: (match) => {
           const prefix = paragraph.text.slice(0, match.index ?? 0);
           const watches =
             /\b(?:when|whenever|if)\b/.test(prefix) && !prefix.includes(',');
-          const subject = subjectFrom(match[1], card).kind;
+          const subject = subjectFrom(
+            sacrificeSubjectText(match, paragraph),
+            card,
+          ).kind;
+          const displaySubject = `${subject[0].toUpperCase()}${subject.slice(1)}`;
           return watches
-            ? `${subject[0].toUpperCase()}${subject.slice(1)} Sacrifice Trigger`
-            : `Sacrifices ${subject}`;
+            ? `${displaySubject} Sacrifice Trigger`
+            : `Sacrifices ${displaySubject}`;
         },
         direction: (match) => {
           const prefix = paragraph.text.slice(0, match.index ?? 0);
@@ -311,7 +338,44 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
             : 'emits';
         },
         event: 'sacrificed',
-        subject: (match) => subjectFrom(match[1], card),
+        subject: (match) =>
+          subjectFrom(sacrificeSubjectText(match, paragraph), card),
+      },
+    );
+    addMatches(
+      effects,
+      card,
+      paragraph,
+      'typal-group-bonus',
+      /\b(?:other )?((?!(?:creatures?|artifacts?|enchantments?|lands?|permanents?|tokens?|cards?|spells?)\b)[a-z][a-z-]+s) you control\b[^.\n]*\b(?:get|have|gain|cost|can|may)\b[^.\n]*/g,
+      {
+        label: (match) => {
+          const type = singularCreatureType(match[1]);
+          return `${type[0].toUpperCase()}${type.slice(1)} Typal Bonus`;
+        },
+        direction: 'listens',
+        event: 'created',
+        subject: (match) => ({
+          kind: 'creature',
+          creatureTypes: [singularCreatureType(match[1])],
+        }),
+      },
+    );
+    addMatches(
+      effects,
+      card,
+      paragraph,
+      'typal-event-payoff',
+      /\b(?:when|whenever) (?:a|another|one or more) ((?!(?:creature|artifact|enchantment|land|permanent|token|card|spell)\b)[a-z][a-z-]+)\b[^.\n]*\b(?:enters?|dies?|attacks?|deals? combat damage)\b[^.\n]*/g,
+      {
+        label: (match) =>
+          `${match[1][0].toUpperCase()}${match[1].slice(1)} Typal Trigger`,
+        direction: 'listens',
+        event: 'created',
+        subject: (match) => ({
+          kind: 'creature',
+          creatureTypes: [match[1]],
+        }),
       },
     );
     addMatches(
@@ -341,6 +405,23 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
         direction: 'listens',
         event: 'dies',
         subject: () => ({ kind: 'creature' }),
+      },
+    );
+    addMatches(
+      effects,
+      card,
+      paragraph,
+      'typal-conditional-bonus',
+      /\bif\b[^.\n]*\b(?:creature|permanent)\b[^.\n]*\bis (?:a|an) ([a-z][a-z-]+)\b[^.\n]*/g,
+      {
+        label: (match) =>
+          `${match[1][0].toUpperCase()}${match[1].slice(1)} Typal Bonus`,
+        direction: 'listens',
+        event: 'created',
+        subject: (match) => ({
+          kind: 'creature',
+          creatureTypes: [match[1]],
+        }),
       },
     );
     addMatches(
@@ -508,6 +589,74 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
               : undefined,
       },
     );
+    const counterLimitedSelfReturn = paragraph.text.match(
+      /\bwhen this creature dies\b[^.]*\breturn it to the battlefield with one fewer ([a-z-]+) counter on it\b[^.]*/,
+    );
+    if (counterLimitedSelfReturn) {
+      const counterName = counterLimitedSelfReturn[1];
+      const initialCounterText = oracleTextWithoutReminderText(card).match(
+        new RegExp(
+          `\\benters with (a|an|one|two|three|four|five|six|seven|eight|nine|ten|\\d+) ${counterName} counters? on it`,
+        ),
+      )?.[1];
+      const initialCounters = initialCounterText
+        ? (NUMBER_WORDS[initialCounterText] ?? Number(initialCounterText))
+        : 1;
+      const before = effects.length;
+      addMatches(
+        effects,
+        card,
+        paragraph,
+        'counter-limited-self-return',
+        /\breturn it to the battlefield with one fewer [a-z-]+ counter on it\b/g,
+        {
+          label: `Returns Itself to the Battlefield (${initialCounters} returns)`,
+          direction: 'emits',
+          event: 'returned',
+          subject: () => ({ kind: 'creature', qualifiers: ['self'] }),
+          sourceZone: 'graveyard',
+          destinationZone: 'battlefield',
+        },
+      );
+      effects.slice(before).forEach((effect) => {
+        effect.quantity = {
+          minimum: 0,
+          expected: initialCounters,
+          unbounded: false,
+          scalesWithPlayers: false,
+          expression: `${initialCounters} counter-limited returns`,
+        };
+        effect.timing = {
+          ...effect.timing,
+          repeatable: initialCounters > 1,
+          multiUsePerTurn: false,
+        };
+        effect.conditions = [
+          ...new Set([...effect.conditions, 'counter-limited']),
+        ];
+      });
+    }
+    if (
+      /\benchant creature card in (?:a|the) graveyard\b/.test(
+        oracleTextWithoutReminderText(card).toLowerCase(),
+      )
+    )
+      addMatches(
+        effects,
+        card,
+        paragraph,
+        'aura-recursion',
+        /\breturn enchanted creature card to the battlefield\b/g,
+        {
+          label: 'Returns Enchanted Creature from Graveyard to Battlefield',
+          direction: 'emits',
+          event: 'returned',
+          subject: () => ({ kind: 'creature' }),
+          sourceZone: 'graveyard',
+          destinationZone: 'battlefield',
+          inferred: true,
+        },
+      );
     addMatches(
       effects,
       card,
