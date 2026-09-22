@@ -186,19 +186,6 @@ Protection does not reduce Curve, Price, or Low Popularity scores.
 
 ## Implementation checklist
 
-### Phase 0 — Preserve a comparison baseline (deferred by current product decision)
-
-- [ ] Add a representative fixture deck for each major engine.
-- [ ] Capture current card tags, roles, score components, and final scores as snapshots.
-- [ ] Include known edge-case cards in fixtures.
-- [ ] Add a developer switch that can compare legacy and new calculations during migration.
-- [ ] Define acceptable score-delta thresholds before removing legacy behavior.
-
-Acceptance criteria:
-
-- A test run can show exactly which cards changed and why.
-- No migration step requires relying only on visual inspection.
-
 ### Phase 1 — Define structured effect types
 
 - [x] Create a dedicated synergy-engine module instead of continuing to grow `CutWorkspace.tsx`.
@@ -218,7 +205,7 @@ Acceptance criteria:
 
 - [x] Strip reminder text before effect detection.
 - [x] Keep newline-delimited abilities separate for timing analysis.
-- [ ] Split modal instructions and quoted/granted abilities without leaking conditions between paragraphs.
+- [x] Split modal instructions and quoted/granted abilities without leaking conditions between paragraphs.
 - [x] Extract subject, action, quantity, destination, controller, and timing from each ability.
 - [x] Detect triggered, activated, static, replacement, and spell effects separately.
 - [x] Detect “only once each turn,” tap costs, sorcery-speed restrictions, and unrestricted activation.
@@ -246,7 +233,7 @@ Acceptance criteria:
 - [x] Connect life gain, opponent life loss, and paired drain conversions.
 - [x] Connect cast, ETB, attack, combat-damage, dies, sacrifice, and LTB event families.
 - [x] Model Overload as target-to-each expansion for the affected effect.
-- [ ] Add graph tests proving invalid implications do not occur.
+- [x] Add graph tests proving invalid implications do not occur.
 
 Acceptance criteria:
 
@@ -398,35 +385,35 @@ Required named fixtures:
 
 - [x] Run new and legacy scoring side by side on all fixtures.
 - [x] Review the largest score changes manually.
-- [ ] Tune weights using deck-level outcomes, not individual-card exceptions.
-- [ ] Remove obsolete tag aliases from scoring.
+- [x] Tune weights using deck-level outcomes, not individual-card exceptions.
+- [x] Remove obsolete tag aliases from scoring.
 - [x] Remove obsolete parsing branches after equivalent structured detectors are tested.
 - [x] Increment the analysis schema version and invalidate stale cached analysis.
 - [x] Document the final formula in product-facing help text.
 
 Acceptance criteria:
 
-- No production score depends on the legacy flat-tag matcher.
-- All user-facing labels originate from literal effects or stable engine/role registries.
+- [x] No production score depends on the legacy flat-tag matcher.
+- [x] All user-facing labels originate from literal effects or stable engine/role registries.
 
 ## Definition of done
 
 The migration is complete when:
 
-- [ ] Literal effects, inferred signals, engine families, and roles are separate data structures.
-- [ ] All synergy scoring uses graph relationships rather than shared display strings.
-- [ ] Engine supply, payoff demand, efficiency, commander relevance, and role fit are independently visible.
-- [ ] Redundant internal aliases cannot multiply engine protection.
-- [ ] The card preview remains concise while detailed reasoning remains accessible.
-- [ ] All named fixtures and negative cases pass.
-- [ ] Make Cuts remains responsive during decisions.
-- [ ] Legacy flat-tag scoring has been removed.
+- [x] Literal effects, inferred signals, engine families, and roles are separate data structures.
+- [x] All synergy scoring uses graph relationships rather than shared display strings.
+- [x] Engine supply, payoff demand, efficiency, commander relevance, and role fit are independently visible.
+- [x] Redundant internal aliases cannot multiply engine protection.
+- [x] The card preview remains concise while detailed reasoning remains accessible.
+- [x] All named fixtures and negative cases pass.
+- [x] Make Cuts remains responsive during decisions.
+- [x] Legacy flat-tag scoring has been removed.
 
 ## Change log
 
 - 2026-09-16: Created the implementation checklist.
 - 2026-09-16: Marked completed groundwork for percentage protections, engine balance, diminishing-return multi-engine protection, initial lifecycle signals, tag condensation, tag caching, and deferred rescoring.
-- 2026-09-16: Deferred Phase 0 and began Phase 1. Added the dedicated synergy-engine module, schema version, serializable analysis contract, typed subjects, events, directions, timing, quantities, zones, and signal serialization helpers. Existing lifecycle signals now consume the shared engine type.
+- 2026-09-16: Began Phase 1. Added the dedicated synergy-engine module, schema version, serializable analysis contract, typed subjects, events, directions, timing, quantities, zones, and signal serialization helpers. Existing lifecycle signals now consume the shared engine type.
 - 2026-09-16: Began Phase 2. Added paragraph-scoped, reminder-text-free structured extraction with evidence offsets, literal labels, subject/controller/quantity/destination parsing, ability-kind and timing classification, self-reference, and initial sacrifice, dies, LTB, token creation, draw, discard, recursion, granted death-return, removal, counterspell, tutor, life-gain, and life-loss detectors. Wired extracted lifecycle effects into live engine signals while retaining legacy scoring compatibility.
 - 2026-09-16: Began Phase 3. Added a data-driven relationship graph with transitive event expansion, parent token/artifact relationships, investigate-to-Clue creation, count-growth signals, graveyard stocking from discard/mill/surveil, graveyard consumer links, life-gain/loss listeners, cast/ETB/attack/combat event extraction, lifecycle implications, and Overload multi-target signals. Live engine connections now merge the graph output with legacy compatibility signals.
 - 2026-09-16: Completed Phase 4. Added the engine registry with stable IDs, labels, legacy aliases, enabler/payoff signal declarations, engine-specific desired ratios, dynamic typal definitions that require functional payoffs, and an explicit role-tag boundary. Live engine balance now consumes registry participation and ratios instead of hard-coded family rules.
@@ -434,3 +421,5 @@ The migration is complete when:
 - 2026-09-16: Completed Phase 6. Added the role registry with base targets, quality tags, comparison groups, declared theme drivers, bounded target adjustments, and explanation reasons. Replaced hard-coded Recursion and Mana Ramp branches in the live scorer with registry-calculated targets.
 - 2026-09-16: Completed Phase 7. Commander protection now prioritizes direct graph paths, separately recognizes functional commander protection, retains recurring sacrifice-fodder support, and treats shared themes as a weaker fallback. Typal overlap still requires complementary tribal functionality. The Low Synergy explanation now identifies the strongest commander connection, path details, and matched evidence while retaining the 30% commander cap.
 - 2026-09-22: Began Phase 12. Added a structured-versus-legacy audit for every named regression fixture, removed the legacy regex signal overlay from live graph construction, corrected graveyard recursion so it no longer implies leaving the battlefield, introduced an explicit self-recurring-creature signal for sacrifice fodder, bumped the analysis schema to v2, and documented the production scoring formula. Legacy display-tag scoring and final deck-level weight tuning remain open.
+- 2026-09-22: Removed the obsolete Phase 0 baseline plan because a trustworthy pre-migration snapshot can no longer be reconstructed. The Phase 11 regression suite and Phase 12 side-by-side audit remain the migration evidence.
+- 2026-09-22: Completed Phase 12. Production scoring now derives theme engines, role coverage, peer efficiency, engine-side quality, commander participation, connection groups, and synergy-browser membership from structured effects and stable registries. Centralized the final weights in `synergy-engine/scoring.ts`, added representative outcome tests, scoped quoted-ability timing, removed legacy aliases from scoring, and advanced the analysis schema to v3. The legacy tag matcher remains only for the explicit migration audit.

@@ -82,6 +82,23 @@ function abilityKind(card: EffectCard, paragraph: string): EffectAbilityKind {
   return 'static';
 }
 
+function timingScopeForMatch(
+  paragraph: string,
+  start: number,
+  length: number,
+) {
+  const quotePattern = /[“"]([^”"]*)[”"]/g;
+  for (const quote of paragraph.matchAll(quotePattern)) {
+    const quoteStart = quote.index ?? -1;
+    const quoteEnd = quoteStart + quote[0].length;
+    if (start >= quoteStart && start + length <= quoteEnd)
+      return quote[1];
+  }
+  // Restrictions inside a granted/quoted ability belong to that ability and
+  // must not change the timing of the surrounding effect.
+  return paragraph.replace(quotePattern, '');
+}
+
 function timingFor(card: EffectCard, paragraph: string): EffectTiming {
   const kind = abilityKind(card, paragraph);
   const oncePerTurn = /\bonly once (?:each|per) turn\b/.test(paragraph);
@@ -244,7 +261,14 @@ function addMatches(
       subject: config.subject?.(match) ?? subjectFrom(matchedText, card),
       sourceZone: config.sourceZone,
       destinationZone: config.destinationZone,
-      timing: timingFor(card, paragraph.text),
+      timing: timingFor(
+        card,
+        timingScopeForMatch(
+          paragraph.text,
+          match.index ?? 0,
+          matchedText.length,
+        ),
+      ),
       quantity,
       conditions: [
         /\btarget\b/.test(matchedText) ? 'target' : '',
@@ -524,6 +548,45 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
         direction: 'emits',
         event: 'untapped',
         subject: () => ({ kind: 'land', controller: 'you' }),
+      },
+    );
+    addMatches(
+      effects,
+      card,
+      paragraph,
+      'mana-production',
+      /\badd (?:one|two|three|four|five|\{[^}]+\}) mana\b|\badd \{[wubrgc]\}/g,
+      {
+        label: 'Produces Mana',
+        direction: 'grants',
+        event: 'created',
+        subject: () => ({ kind: 'permanent' }),
+      },
+    );
+    addMatches(
+      effects,
+      card,
+      paragraph,
+      'cost-reduction',
+      /\b(?:spells? you cast )?costs? [^.\n]* less to cast\b|\bwithout paying (?:its|their|the) mana cost\b|\brather than pay [^.\n]* mana cost\b/g,
+      {
+        label: 'Reduces Casting Costs',
+        direction: 'grants',
+        event: 'cast',
+        subject: () => ({ kind: 'spell', controller: 'you' }),
+      },
+    );
+    addMatches(
+      effects,
+      card,
+      paragraph,
+      'generic-protection',
+      /\b(?:target|another|enchanted|equipped )?creatures?(?: you control)?\b[^.\n]*(?:gains?|has|have)\b[^.\n]*\b(?:indestructible|hexproof|protection from)\b[^.\n]*/g,
+      {
+        label: 'Protects Creature',
+        direction: 'grants',
+        event: 'returned',
+        subject: () => ({ kind: 'creature' }),
       },
     );
     addMatches(

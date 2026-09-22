@@ -1,6 +1,6 @@
-// Version 2 removes the legacy regex signal overlay. Cached v1 analysis must
-// be rebuilt so all engine connections originate in structured effects.
-export const SYNERGY_ANALYSIS_SCHEMA_VERSION = 2;
+// Version 3 completes the structured-scoring migration and adds scoped quoted
+// abilities plus structured role effects. Older cached analysis must rebuild.
+export const SYNERGY_ANALYSIS_SCHEMA_VERSION = 3;
 
 export type EffectZone =
   | 'library'

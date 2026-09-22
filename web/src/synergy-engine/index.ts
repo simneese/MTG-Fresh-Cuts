@@ -21,6 +21,12 @@ export {
 } from './engine-registry';
 export type { EngineDefinition } from './engine-registry';
 export {
+  SYNERGY_SCORING_CONFIG,
+  combinedProtectionRate,
+  engineSideBalance,
+  lowSynergyScore,
+} from './scoring';
+export {
   ROLE_DEFINITIONS,
   calculateRoleTargets,
   roleDefinition,

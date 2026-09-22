@@ -31,4 +31,19 @@ describe('negative extraction cases', () => {
     expect(sacrifice?.timing.sorcerySpeedOnly).toBe(true);
     expect(sacrifice?.timing.instantSpeed).toBe(false);
   });
+
+  it('does not leak a quoted ability restriction into the granting ability', () => {
+    const effects = extractCardEffects(
+      fixtureCard(
+        'Quoted timing',
+        '{T}: Create a Treasure token. Target creature gains “{1}, Sacrifice this creature: Draw a card. Activate only as a sorcery.”',
+      ),
+    );
+    const treasure = effects.find((effect) => effect.label === 'Creates Treasure');
+    const grantedSacrifice = effects.find(
+      (effect) => effect.event === 'sacrificed',
+    );
+    expect(treasure?.timing.sorcerySpeedOnly).toBe(false);
+    expect(grantedSacrifice?.timing.sorcerySpeedOnly).toBe(true);
+  });
 });
