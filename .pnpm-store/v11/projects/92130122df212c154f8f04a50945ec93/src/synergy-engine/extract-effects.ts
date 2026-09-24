@@ -73,6 +73,7 @@ export function oracleParagraphs(card: EffectCard): OracleParagraph[] {
 }
 
 function abilityKind(card: EffectCard, paragraph: string): EffectAbilityKind {
+  if (/^outlast\b/.test(paragraph)) return 'keyword';
   if (/\b(?:when|whenever|at)\b/.test(paragraph)) return 'triggered';
   if (/\bif\b[^.]*\binstead\b|\bwould\b[^.]*\binstead\b/.test(paragraph))
     return 'replacement';
@@ -102,8 +103,10 @@ function timingScopeForMatch(
 function timingFor(card: EffectCard, paragraph: string): EffectTiming {
   const kind = abilityKind(card, paragraph);
   const oncePerTurn = /\bonly once (?:each|per) turn\b/.test(paragraph);
-  const requiresTap = /^\s*[^:]*\{t\}[^:]*:/.test(paragraph);
-  const sorcerySpeedOnly = /\bactivate only as a sorcery\b/.test(paragraph);
+  const requiresTap =
+    /^\s*[^:]*\{t\}[^:]*:/.test(paragraph) || /^outlast\b/.test(paragraph);
+  const sorcerySpeedOnly =
+    /\bactivate only as a sorcery\b/.test(paragraph) || /^outlast\b/.test(paragraph);
   const delayedOneShot = /\bat the beginning of the next\b/.test(paragraph);
   const recurringTrigger =
     kind === 'triggered' &&
@@ -433,6 +436,23 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
       effects,
       card,
       paragraph,
+      'outlast-counter-placement',
+      /^outlast\b[^.\n]*/g,
+      {
+        label: 'Places +1/+1 Counter with Outlast',
+        direction: 'emits',
+        event: 'counter-added',
+        subject: () => ({
+          kind: 'creature',
+          controller: 'you',
+          qualifiers: ['self'],
+        }),
+      },
+    );
+    addMatches(
+      effects,
+      card,
+      paragraph,
       'clue-animation',
       /\b(?:other |target |each |all )?clues?(?: you control)?\b[^.\n]*\bbecomes?\b[^.\n]*\bcreatures?\b[^.\n]*/g,
       {
@@ -524,6 +544,19 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
       /\b(?:it|that creature|target creature|target attacking creature|creatures? you control) gains? (?:flying|first strike|double strike|deathtouch|fear|haste|hexproof|horsemanship|indestructible|intimidate|lifelink|menace|reach|shadow|skulk|trample|vigilance)\b[^.\n]*/g,
       {
         label: (match) => `Grants ${match[0].match(/\b(flying|first strike|double strike|deathtouch|fear|haste|hexproof|horsemanship|indestructible|intimidate|lifelink|menace|reach|shadow|skulk|trample|vigilance)\b/)?.[1]?.replace(/\b\w/g, (letter) => letter.toUpperCase()) ?? 'Keyword'}`,
+        direction: 'grants',
+        event: 'keyword-granted',
+        subject: () => ({ kind: 'creature', controller: 'you' }),
+      },
+    );
+    addMatches(
+      effects,
+      card,
+      paragraph,
+      'counter-conditional-keyword-grant',
+      /\b(?:each|all) creatures? you control with (?:a|one or more) \+1\/\+1 counters? on (?:it|them) (?:has|have) (?:flying|first strike|double strike|deathtouch|fear|haste|hexproof|horsemanship|indestructible|intimidate|lifelink|menace|reach|shadow|skulk|trample|vigilance)\b[^.\n]*/g,
+      {
+        label: (match) => `Grants ${match[0].match(/\b(flying|first strike|double strike|deathtouch|fear|haste|hexproof|horsemanship|indestructible|intimidate|lifelink|menace|reach|shadow|skulk|trample|vigilance)\b/)?.[1]?.replace(/\b\w/g, (letter) => letter.toUpperCase()) ?? 'Keyword'} to Creatures with +1/+1 Counters`,
         direction: 'grants',
         event: 'keyword-granted',
         subject: () => ({ kind: 'creature', controller: 'you' }),
@@ -1048,6 +1081,46 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
       card,
       paragraph,
       'graveyard-control',
+      /\bchoose target (?:artifact |creature |enchantment |land |planeswalker )?card in (?:a|any|target player'?s|an opponent'?s) graveyard\.\s*exile it\b[^.\n]*/g,
+      {
+        label: (match) =>
+          /\bbrain counter\b/.test(match[0])
+            ? 'Exiles Graveyard Card with Brain Counter'
+            : 'Exiles Card from Graveyard',
+        direction: 'emits',
+        event: 'exiled',
+        subject: (match) => ({
+          kind: 'card',
+          controller: 'any',
+          qualifiers: /\bcreature card\b/.test(match[0])
+            ? ['creature']
+            : undefined,
+        }),
+        sourceZone: 'graveyard',
+        destinationZone: 'exile',
+      },
+    );
+    addMatches(
+      effects,
+      card,
+      paragraph,
+      'exiled-ability-inheritance',
+      /\bhas all activated abilities of all cards in exile with [^.\n]*counters? on them\b[^.\n]*/g,
+      {
+        label: 'Gains Activated Abilities from Exiled Cards',
+        direction: 'listens',
+        event: 'exiled',
+        subject: () => ({
+          kind: 'card',
+          qualifiers: ['activated-ability', 'marked-in-exile'],
+        }),
+      },
+    );
+    addMatches(
+      effects,
+      card,
+      paragraph,
+      'graveyard-control',
       /\bexile\b[^.\n]*\b(?:target|all|each|any|up to (?:one|two|three|four|five|\d+)) cards? from (?:a|any|target player'?s|an opponent'?s|each player'?s|all) graveyards?\b/g,
       {
         label: 'Exiles Cards from Graveyard',
@@ -1288,14 +1361,36 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
         subject: () => ({ kind: 'token', tokenType: 'clue' }),
       },
     );
-    addMatches(effects, card, paragraph, 'mill', /\bmills?\b[^.\n]*/g, {
+    addMatches(effects, card, paragraph, 'mill', /\b(?:(?:they|target player|that player|an opponent) )?mills?\b[^.\n]*/g, {
       label: 'Mills Cards',
       direction: 'emits',
       event: 'milled',
-      subject: () => ({ kind: 'card' }),
+      subject: (match) => ({
+        kind: 'card',
+        controller: /\b(?:they|opponent|target player)\b/.test(match[0])
+          ? 'target-player'
+          : 'you',
+      }),
       sourceZone: 'library',
       destinationZone: 'graveyard',
     });
+    addMatches(
+      effects,
+      card,
+      paragraph,
+      'energy-generation',
+      /\byou get (?:\{e\})+/g,
+      {
+        label: 'Generates Energy',
+        direction: 'emits',
+        event: 'counter-added',
+        subject: () => ({
+          kind: 'player',
+          controller: 'you',
+          qualifiers: ['energy'],
+        }),
+      },
+    );
     addMatches(
       effects,
       card,
@@ -1425,7 +1520,7 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
       card,
       paragraph,
       'combat-damage-event',
-      /\b(?:when|whenever|if)\b[^.\n]*\b(?:creatures?|this creature|it)\b[^.\n]*\bdeals? combat damage\b/g,
+      /\b(?:when|whenever|if)\b[^.\n]*\bdeals? combat damage\b/g,
       {
         label: 'Combat Damage Trigger',
         direction: 'listens',

@@ -87,7 +87,7 @@ function directSignals(effect: CardEffect) {
     signals.add('permanent-created');
     signals.add('token-created');
   }
-  if (['counter-placement', 'creature-anthem'].includes(detectorId))
+  if (['counter-placement', 'outlast-counter-placement', 'creature-anthem'].includes(detectorId))
     signals.add('creature-power-increased');
   if (detectorId === 'creature-power-threshold')
     signals.add('creature-count-increased');
@@ -119,6 +119,21 @@ function listeningSignals(effect: CardEffect) {
   )
     return direct;
   return expandEmittedSignals(direct);
+}
+
+function isSourceScopedExileListener(effect: CardEffect) {
+  if (effect.event !== 'exiled' || effect.direction !== 'listens') return false;
+  const text = effect.evidence[0]?.paragraphText ?? '';
+  return (
+    effect.evidence[0]?.detectorId === 'exiled-ability-inheritance' ||
+    /\bcards? exiled by (?!you\b|an? opponents?\b|each player\b|target player\b)/.test(
+      text,
+    ) ||
+    /\bcards? (?:in exile )?with [a-z-]+ counters? on them\b/.test(text) ||
+    /\bcards? exiled with (?:this|that) (?:permanent|artifact|creature|card)\b/.test(
+      text,
+    )
+  );
 }
 
 function impliedSignals(signal: string) {
@@ -215,6 +230,8 @@ export function buildEngineSignals(effects: CardEffect[]): EngineSignals {
       emittedSeeds.add('creature-count-increased');
       listens.add('animatable-clue');
     }
+    if (detectorId === 'counter-conditional-keyword-grant')
+      listens.add('creature-counter-added');
     if (
       ['unblockable-grant', 'combat-damage-amplifier', 'extra-combat'].includes(
         detectorId,
@@ -259,7 +276,10 @@ export function buildEngineSignals(effects: CardEffect[]): EngineSignals {
       )
     )
       listens.add('copyable-creature');
-    if (effect.direction === 'listens')
+    if (
+      effect.direction === 'listens' &&
+      !isSourceScopedExileListener(effect)
+    )
       listeningSignals(effect).forEach((signal) => listens.add(signal));
     if (EMITTING_DIRECTIONS.has(effect.direction)) {
       const effectEmits = expandEmittedSignals(signals);

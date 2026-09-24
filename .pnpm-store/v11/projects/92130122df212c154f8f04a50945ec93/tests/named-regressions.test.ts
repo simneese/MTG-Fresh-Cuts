@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { extractCardEffects } from '../src/synergy-engine/extract-effects';
 import { buildEngineSignals } from '../src/synergy-engine/relationship-graph';
 import {
+  engineParticipation,
   engineSpecializationParticipation,
   engineSpecializationRoles,
 } from '../src/synergy-engine/engine-registry';
@@ -225,6 +226,73 @@ describe('corrected named card regressions', () => {
     const effects = effectsFor('Gravecrawler', 'You may cast Gravecrawler from your graveyard as long as you control a Zombie.');
     const recursion = effects.find((effect) => effect.sourceZone === 'graveyard');
     expect(recursion?.label).toBe('Casts from Graveyard');
+  });
+
+  it('captures Ainok Bond-Kin as a counter enabler and payoff', () => {
+    const effects = effectsFor(
+      'Ainok Bond-Kin',
+      'Outlast {1}{W}\nEach creature you control with a +1/+1 counter on it has first strike.',
+      'Creature — Dog Soldier',
+    );
+    expect(effects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: 'Places +1/+1 Counter with Outlast',
+          event: 'counter-added',
+          timing: expect.objectContaining({
+            abilityKind: 'keyword',
+            requiresTap: true,
+            sorcerySpeedOnly: true,
+          }),
+        }),
+        expect.objectContaining({
+          label: 'Grants First Strike to Creatures with +1/+1 Counters',
+          event: 'keyword-granted',
+          direction: 'grants',
+        }),
+      ]),
+    );
+    const signals = buildEngineSignals(effects);
+    expect(signals.emits).toContain('creature-counter-added');
+    expect(signals.listens).toContain('creature-counter-added');
+  });
+
+  it('captures Rex, Cyber-Hound graveyard control and ability inheritance', () => {
+    const card = fixtureCard(
+      'Rex, Cyber-Hound',
+      'Whenever Rex, Cyber-Hound deals combat damage to a player, they mill two cards and you get {E}{E}.\nPay {E}{E}: Choose target creature card in a graveyard. Exile it with a brain counter on it. Activate only as a sorcery.\nRex has all activated abilities of all cards in exile with brain counters on them.',
+      'Legendary Artifact Creature — Robot Dog',
+    );
+    const effects = extractCardEffects(card);
+    expect(effects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: 'Combat Damage Trigger' }),
+        expect.objectContaining({
+          label: 'Mills Cards',
+          subject: expect.objectContaining({ controller: 'target-player' }),
+        }),
+        expect.objectContaining({ label: 'Generates Energy' }),
+        expect.objectContaining({
+          label: 'Exiles Graveyard Card with Brain Counter',
+          sourceZone: 'graveyard',
+          destinationZone: 'exile',
+        }),
+        expect.objectContaining({
+          label: 'Gains Activated Abilities from Exiled Cards',
+          direction: 'listens',
+        }),
+      ]),
+    );
+    expect(structuredRolesForCard(card, effects)).toContain(
+      'Graveyard control',
+    );
+    const signals = buildEngineSignals(effects);
+    expect(signals.emits).toContain('card-exiled');
+    expect(signals.listens).not.toContain('card-exiled');
+    expect(engineParticipation(signals, 'engine:exile')).toMatchObject({
+      enabler: true,
+      payoff: false,
+    });
   });
 
   it('Nine-Lives Familiar exposes all counter-limited sacrifice bodies', () => {

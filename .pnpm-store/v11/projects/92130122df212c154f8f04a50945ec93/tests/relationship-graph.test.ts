@@ -134,6 +134,44 @@ describe('relationship graph implications', () => {
     ).toEqual(['engine:creature-spell-copy']);
   });
 
+  it('does not turn source-scoped exile references into generic exile payoffs', () => {
+    const scoped = buildEngineSignals([
+      {
+        id: 'scoped-exile',
+        label: 'Uses Cards Exiled by This Artifact',
+        direction: 'listens',
+        event: 'exiled',
+        subject: { kind: 'card' },
+        timing: {
+          abilityKind: 'static',
+          repeatable: false,
+          multiUsePerTurn: false,
+          instantSpeed: false,
+          oncePerTurn: false,
+          requiresTap: false,
+          sorcerySpeedOnly: false,
+        },
+        quantity: {
+          minimum: 1,
+          expected: 1,
+          unbounded: false,
+          scalesWithPlayers: false,
+        },
+        conditions: [],
+        evidence: [{
+          detectorId: 'scoped-exile-reference',
+          paragraphIndex: 0,
+          paragraphText: 'this artifact has the activated abilities of cards exiled by this artifact.',
+          matchedText: 'cards exiled by this artifact',
+          start: 0,
+          end: 31,
+          inferred: false,
+        }],
+      },
+    ]);
+    expect(scoped.listens).not.toContain('card-exiled');
+  });
+
   it('recognizes chosen creature types as unrestricted creature-spell copying', () => {
     const card = fixtureCard(
       'Reflections of Littjara',
