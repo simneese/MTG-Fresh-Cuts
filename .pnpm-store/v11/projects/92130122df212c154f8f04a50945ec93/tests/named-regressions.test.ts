@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { extractCardEffects } from '../src/synergy-engine/extract-effects';
 import { buildEngineSignals } from '../src/synergy-engine/relationship-graph';
+import {
+  engineSpecializationParticipation,
+  engineSpecializationRoles,
+} from '../src/synergy-engine/engine-registry';
 import { fixtureCard } from './fixtures';
 import {
   cardFillsRole,
   creatureTypeSynergyRoles,
   selfRecurringSacrificeCapacity,
+  structuredRolesForCard,
   synergyPreviewRoles,
   synergyTags,
 } from '../src/CutWorkspace';
@@ -14,6 +19,74 @@ const effectsFor = (name: string, text: string, type?: string) =>
   extractCardEffects(fixtureCard(name, text, type));
 
 describe('corrected named card regressions', () => {
+  it('captures Traveling Botanist tap, land-draw, and graveyard effects', () => {
+    const card = fixtureCard(
+      'Traveling Botanist',
+      "Whenever this creature becomes tapped, look at the top card of your library. If it's a land card, you may reveal it and put it into your hand. If you don't put the card into your hand, you may put it into your graveyard.",
+      'Creature — Dog Scout',
+    );
+    const effects = extractCardEffects(card);
+    expect(effects.map((effect) => effect.label)).toEqual(
+      expect.arrayContaining([
+        'Becomes Tapped Trigger',
+        'Looks at Top Card of Library',
+        'Puts Top Land into Hand',
+        'Puts Top Card into Graveyard',
+      ]),
+    );
+    expect(structuredRolesForCard(card, effects)).toContain('Card draw');
+    expect(buildEngineSignals(effects).emits).toContain('graveyard-stocked');
+  });
+
+  it('captures Dog Umbra timing, restriction, and protection effects', () => {
+    const card = fixtureCard(
+      'Dog Umbra',
+      "Flash\nEnchant creature\nAs long as another player controls enchanted creature, it can't attack or block. Otherwise, this Aura has umbra armor.",
+      'Enchantment — Aura',
+    );
+    const effects = extractCardEffects(card);
+    expect(effects.map((effect) => effect.label)).toEqual(
+      expect.arrayContaining([
+        'Has Flash',
+        'Enchants Creature',
+        'Prevents Attacking or Blocking',
+        'Grants Umbra Armor',
+      ]),
+    );
+    const roles = structuredRolesForCard(card, effects);
+    expect(roles).toContain('Removal');
+    expect(roles).toContain('Protection');
+  });
+
+  it('captures both K-9, Mark I abilities and its protection role', () => {
+    const card = fixtureCard(
+      'K-9, Mark I',
+      "Negative — As long as K-9 is untapped, other legendary creatures you control have ward {1}.\nAffirmative — {1}{U}, {T}: Target legendary creature can't be blocked this turn.\nDoctor's companion",
+      'Legendary Artifact Creature — Robot Dog',
+    );
+    const effects = extractCardEffects(card);
+    expect(effects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: 'Grants Ward',
+          event: 'keyword-granted',
+          direction: 'grants',
+          timing: expect.objectContaining({ abilityKind: 'static' }),
+        }),
+        expect.objectContaining({
+          label: 'Grants Unblockable',
+          event: 'combat-damage',
+          direction: 'grants',
+          timing: expect.objectContaining({
+            abilityKind: 'activated',
+            requiresTap: true,
+          }),
+        }),
+      ]),
+    );
+    expect(structuredRolesForCard(card, effects)).toContain('Protection');
+  });
+
   it('Fumulus watches creature sacrifice', () => {
     const effects = effectsFor('Fumulus, the Infestation', 'Whenever a creature is sacrificed, put a +1/+1 counter on Fumulus.');
     expect(effects.some((effect) => effect.event === 'sacrificed' && effect.direction === 'listens')).toBe(true);
@@ -34,7 +107,22 @@ describe('corrected named card regressions', () => {
     const signals = buildEngineSignals(effects);
     expect(signals.emits).toContain('artifact-sacrificed');
     expect(signals.emits).toContain('creature-sacrificed');
+    expect(signals.emits).toContain('clue-sacrificed');
     expect(signals.listens).toContain('clue-created');
+    expect(effects.map((effect) => effect.label)).toContain('Animates Clues');
+    expect(signals.emits).toContain('clue-animation-enabled');
+    expect(signals.listens).toContain('animatable-clue');
+  });
+
+  it('uses a self-sacrificing permanent subtype for its specific sacrifice engine', () => {
+    const effects = effectsFor(
+      'Five Hundred Year Diary',
+      '{2}, {T}, Sacrifice Five Hundred Year Diary: Draw a card.',
+      'Artifact — Clue',
+    );
+    const signals = buildEngineSignals(effects);
+    expect(signals.emits).toContain('clue-sacrificed');
+    expect(signals.emits).toContain('artifact-sacrificed');
   });
 
   it('Inspiring Statuary listens to artifact count through improvise', () => {
@@ -42,9 +130,84 @@ describe('corrected named card regressions', () => {
     expect(signals.listens).toContain('artifact-count-increased');
   });
 
-  it('Rise and Shine marks Overload as multi-artifact payoff', () => {
-    const signals = buildEngineSignals(effectsFor('Rise and Shine', 'Target noncreature artifact you control becomes a 0/0 artifact creature. Overload {4}{U}{U}.', 'Sorcery'));
-    expect([...signals.listens, ...signals.emits].some((signal) => signal.includes('artifact'))).toBe(true);
+  it('Rise and Shine marks Overload as multi-artifact animation', () => {
+    const effects = effectsFor('Rise and Shine', 'Target noncreature artifact you control becomes a 0/0 artifact creature. Overload {4}{U}{U}.', 'Sorcery');
+    const signals = buildEngineSignals(effects);
+    expect(effects.map((effect) => effect.label)).toContain('Animates Artifact');
+    expect(signals.emits).toContain('artifact-animation-enabled');
+    expect(signals.emits).toContain('multi:artifact-animated');
+    expect(signals.listens).toContain('animatable-artifact');
+  });
+
+  it('captures Case of the Filched Falcon as artifact animation', () => {
+    const effects = effectsFor(
+      'Case of the Filched Falcon',
+      "When this Case enters, investigate.\nTo solve — You control three or more artifacts.\nSolved — {2}{U}, Sacrifice this Case: Put four +1/+1 counters on target noncreature artifact. It becomes a 0/0 Bird creature with flying in addition to its other types.",
+      'Enchantment — Case',
+    );
+    const animation = effects.find(
+      (effect) => effect.evidence[0].detectorId === 'artifact-animation',
+    );
+    expect(animation).toMatchObject({
+      label: 'Animates Artifact',
+      event: 'animated',
+      direction: 'transforms',
+      subject: { kind: 'artifact' },
+    });
+    const signals = buildEngineSignals(effects);
+    expect(signals.emits).toContain('artifact-animation-enabled');
+    expect(signals.emits).toContain('creature-count-increased');
+    expect(signals.listens).toContain('animatable-artifact');
+  });
+
+  it('treats noncreature artifact-token production as animation support', () => {
+    const clueSignals = buildEngineSignals(
+      effectsFor('Deduce', 'Draw a card. Investigate.', 'Instant'),
+    );
+    const treasureSignals = buildEngineSignals(
+      effectsFor('Big Score', 'Create two Treasure tokens.', 'Instant'),
+    );
+    const servoSignals = buildEngineSignals(
+      effectsFor(
+        'Servo Maker',
+        'Create a 1/1 colorless Servo artifact creature token.',
+        'Sorcery',
+      ),
+    );
+    expect(clueSignals.support).toContain('artifact-animation-supported');
+    expect(treasureSignals.support).toContain('artifact-animation-supported');
+    expect(servoSignals.support).not.toContain('artifact-animation-supported');
+  });
+
+  it('projects broad capabilities into an ignored active child engine', () => {
+    const artifactAnimation = buildEngineSignals(
+      effectsFor(
+        'Generic Animator',
+        'Target noncreature artifact you control becomes a 3/3 artifact creature.',
+        'Sorcery',
+      ),
+    );
+    const broadSpellCopy = buildEngineSignals(
+      effectsFor('Broad Copier', 'Copy target spell.', 'Instant'),
+    );
+    expect(
+      engineSpecializationParticipation(
+        artifactAnimation,
+        'engine:clue-animation',
+      ),
+    ).toBe(true);
+    expect(
+      engineSpecializationParticipation(
+        broadSpellCopy,
+        'engine:creature-spell-copy',
+      ),
+    ).toBe(true);
+    expect(
+      engineSpecializationRoles(artifactAnimation, 'engine:clue-animation'),
+    ).toEqual({ enabler: true, payoff: true });
+    expect(
+      engineSpecializationRoles(broadSpellCopy, 'engine:creature-spell-copy'),
+    ).toEqual({ enabler: true, payoff: true });
   });
 
   it('Wilderness Reclamation is repeatable land untap ramp', () => {

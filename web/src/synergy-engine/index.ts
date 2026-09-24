@@ -16,8 +16,11 @@ export {
   dedupeEngineFamilies,
   engineDefinitionForId,
   engineDefinitions,
+  engineSpecializationParticipation,
+  engineSpecializationRoles,
   engineFamilyForLegacyTag,
   engineParticipation,
+  engineIsActive,
 } from './engine-registry';
 export type { EngineDefinition } from './engine-registry';
 export {
@@ -25,6 +28,7 @@ export {
   combinedProtectionRate,
   engineSideBalance,
   lowSynergyScore,
+  manualThemeProtectionRate,
 } from './scoring';
 export {
   ROLE_DEFINITIONS,

@@ -11,6 +11,17 @@ const ARTIFACT_TOKEN_TYPES = new Set<NamedTokenType>([
   'treasure',
 ]);
 
+// Creating one of these tokens indirectly supports its sacrifice engine
+// because the token's game rules include a built-in sacrifice action.
+const INTRINSIC_SACRIFICE_TOKEN_TYPES = new Set<NamedTokenType>([
+  'blood',
+  'clue',
+  'food',
+  'gold',
+  'map',
+  'treasure',
+]);
+
 const EMITTING_DIRECTIONS = new Set([
   'emits',
   'creates',
@@ -62,6 +73,25 @@ function directSignals(effect: CardEffect) {
       signals.add(`${subject}-${effect.event}`),
     );
   if (
+    detectorId === 'spell-copy' &&
+    (effect.subject.kind === 'creature' ||
+      /\bcreature spell\b/.test(effect.evidence[0]?.paragraphText ?? ''))
+  ) {
+    signals.add('spell-copied');
+    signals.add('creature-created');
+    signals.add('permanent-created');
+    signals.add('token-created');
+  }
+  if (detectorId === 'creature-token-copy') {
+    signals.add('creature-created');
+    signals.add('permanent-created');
+    signals.add('token-created');
+  }
+  if (['counter-placement', 'creature-anthem'].includes(detectorId))
+    signals.add('creature-power-increased');
+  if (detectorId === 'creature-power-threshold')
+    signals.add('creature-count-increased');
+  if (
     effect.sourceZone === 'graveyard' &&
     effect.destinationZone === 'battlefield'
   )
@@ -76,6 +106,19 @@ function directSignals(effect: CardEffect) {
   if (effect.event === 'life-gained') signals.add('life-gained');
   if (effect.event === 'life-lost') signals.add('opponent-life-lost');
   return signals;
+}
+
+function listeningSignals(effect: CardEffect) {
+  if (effect.subject.tokenType)
+    return new Set([`${effect.subject.tokenType}-${effect.event}`]);
+  const direct = directSignals(effect);
+  if (
+    ['sacrificed', 'dies', 'exiled', 'leaves-battlefield'].includes(
+      effect.event,
+    )
+  )
+    return direct;
+  return expandEmittedSignals(direct);
 }
 
 function impliedSignals(signal: string) {
@@ -128,6 +171,7 @@ function impliedSignals(signal: string) {
       implied.add('permanent-enters-battlefield');
   }
   if (signal === 'creature-created') implied.add('creature-count-increased');
+  if (signal === 'creature-created') implied.add('creature-power-increased');
   if (signal === 'token-created') implied.add('token-count-increased');
   if (signal === 'artifact-created') implied.add('artifact-count-increased');
   return implied;
@@ -150,12 +194,81 @@ function expandEmittedSignals(seed: Set<string>) {
 export function buildEngineSignals(effects: CardEffect[]): EngineSignals {
   const emittedSeeds = new Set<string>();
   const listens = new Set<string>();
+  const eligible = new Set<string>();
+  const support = new Set<string>();
   effects.forEach((effect) => {
     const signals = directSignals(effect);
-    if (effect.sourceZone === 'graveyard') listens.add('graveyard-stocked');
+    if (
+      (effect.sourceZone === 'graveyard' &&
+        effect.evidence[0]?.detectorId !== 'graveyard-control') ||
+      effect.evidence[0]?.detectorId === 'graveyard-count-threshold'
+    )
+      listens.add('graveyard-stocked');
+    const detectorId = effect.evidence[0]?.detectorId ?? '';
+    if (detectorId === 'artifact-animation') {
+      emittedSeeds.add('artifact-animation-enabled');
+      emittedSeeds.add('creature-count-increased');
+      listens.add('animatable-artifact');
+    }
+    if (detectorId === 'clue-animation') {
+      emittedSeeds.add('clue-animation-enabled');
+      emittedSeeds.add('creature-count-increased');
+      listens.add('animatable-clue');
+    }
+    if (
+      ['unblockable-grant', 'combat-damage-amplifier', 'extra-combat'].includes(
+        detectorId,
+      ) ||
+      (detectorId === 'keyword-grant' &&
+        /\b(?:double strike|fear|flying|horsemanship|intimidate|menace|shadow|skulk|trample)\b/.test(
+          effect.evidence[0]?.matchedText ?? '',
+        ))
+    )
+      emittedSeeds.add('combat-damage-enabled');
+    if (detectorId === 'spell-copy') {
+      const spellCopyText = effect.evidence[0]?.paragraphText ?? '';
+      const creatureSpecific =
+        effect.subject.kind === 'creature' ||
+        /\bcreature spell\b/.test(spellCopyText);
+      emittedSeeds.add(
+        creatureSpecific
+          ? 'creature-spell-copy-enabled'
+          : 'spell-copy-enabled',
+      );
+      if (
+        !creatureSpecific &&
+        /\bcopy (?:that|target|each|the) spells?\b/.test(
+          effect.evidence[0]?.matchedText ?? '',
+        ) &&
+        !/\b(?:instant|sorcery|noncreature) spells?\b/.test(spellCopyText)
+      )
+        emittedSeeds.add('creature-spell-copy-compatible');
+      if (creatureSpecific) {
+        listens.add(
+          /\bnonlegendary creature spell\b/.test(
+            spellCopyText,
+          )
+            ? 'copyable-nonlegendary-creature-spell-cast'
+            : 'copyable-creature-spell-cast',
+        );
+      } else listens.add('copyable-spell-cast');
+    }
+    if (
+      ['creature-token-copy', 'creature-enters-as-copy', 'creature-becomes-copy'].includes(
+        detectorId,
+      )
+    )
+      listens.add('copyable-creature');
     if (effect.direction === 'listens')
-      expandEmittedSignals(signals).forEach((signal) => listens.add(signal));
+      listeningSignals(effect).forEach((signal) => listens.add(signal));
     if (EMITTING_DIRECTIONS.has(effect.direction)) {
+      const effectEmits = expandEmittedSignals(signals);
+      if (
+        effectEmits.has('artifact-created') &&
+        effectEmits.has('token-created') &&
+        !effectEmits.has('creature-created')
+      )
+        support.add('artifact-animation-supported');
       signals.forEach((signal) => {
         emittedSeeds.add(signal);
         if (
@@ -166,7 +279,14 @@ export function buildEngineSignals(effects: CardEffect[]): EngineSignals {
       });
     }
   });
-  return { emits: expandEmittedSignals(emittedSeeds), listens };
+  const emits = expandEmittedSignals(emittedSeeds);
+  INTRINSIC_SACRIFICE_TOKEN_TYPES.forEach((type) => {
+    if (emits.has(`${type}-created`))
+      support.add(`${type}-sacrifice-supported`);
+  });
+  if (emits.has('clue-created'))
+    support.add('clue-animation-supported');
+  return { emits, listens, eligible, support };
 }
 
 export function signalPathsBetween(

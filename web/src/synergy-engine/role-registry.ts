@@ -6,6 +6,7 @@ export type RoleName =
   | 'Mana ramp'
   | 'Protection'
   | 'Recursion'
+  | 'Graveyard control'
   | 'Land';
 
 export type DeckRoleContext = {
@@ -140,6 +141,18 @@ export const ROLE_DEFINITIONS: readonly RoleDefinition[] = [
     ],
   },
   {
+    name: 'Graveyard control',
+    minimum: 1,
+    maximum: 3,
+    qualityTags: ['graveyard control'],
+    comparisonGroups: [
+      'single-card graveyard control',
+      'repeatable graveyard control',
+      'graveyard wipe',
+    ],
+    themeDrivers: [],
+  },
+  {
     name: 'Land',
     minimum: 34,
     maximum: 40,
@@ -171,4 +184,3 @@ export function calculateRoleTargets(context: DeckRoleContext) {
     };
   });
 }
-

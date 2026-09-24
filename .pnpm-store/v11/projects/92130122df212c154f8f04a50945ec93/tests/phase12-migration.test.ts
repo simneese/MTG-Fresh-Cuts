@@ -4,6 +4,7 @@ import {
   engineDefinitions,
   engineFamilyForLegacyTag,
   engineParticipation,
+  dedupeEngineFamilies,
 } from '../src/synergy-engine/engine-registry';
 import { extractCardEffects } from '../src/synergy-engine/extract-effects';
 import { buildEngineSignals } from '../src/synergy-engine/relationship-graph';
@@ -30,11 +31,11 @@ const migrationFixtures = [
 ];
 
 function registeredLegacyEngines(card: ReturnType<typeof fixtureCard>) {
-  return [...new Set(
+  return dedupeEngineFamilies([...new Set(
     synergyTags(card)
       .map(engineFamilyForLegacyTag)
       .filter((engine): engine is string => Boolean(engine && engineDefinitionForId(engine))),
-  )].sort();
+  )]).sort();
 }
 
 function structuredEngines(card: ReturnType<typeof fixtureCard>) {
@@ -55,11 +56,11 @@ function structuredEngines(card: ReturnType<typeof fixtureCard>) {
   const referencedTypes = effects.flatMap(
     (effect) => effect.subject.creatureTypes ?? [],
   );
-  return [...new Set([
+  return dedupeEngineFamilies([...new Set([
     ...registered,
     ...literalTypes.map((type) => `engine:type:${type}`),
     ...referencedTypes.map((type) => `engine:type:${type}`),
-  ])].sort();
+  ])]).sort();
 }
 
 describe('phase 12 structured-versus-legacy migration audit', () => {
@@ -80,22 +81,25 @@ describe('phase 12 structured-versus-legacy migration audit', () => {
         {
           "card": "Fumulus",
           "legacy": [
-            "engine:sacrifice",
+            "engine:sacrifice:creature",
             "engine:type:test",
           ],
           "onlyLegacy": [],
-          "onlyStructured": [],
+          "onlyStructured": [
+            "engine:creature-power",
+          ],
           "structured": [
-            "engine:sacrifice",
+            "engine:creature-power",
+            "engine:sacrifice:creature",
             "engine:type:test",
           ],
         },
         {
           "card": "Blood Artist",
           "legacy": [
+            "engine:death",
             "engine:drain",
             "engine:life-gain",
-            "engine:sacrifice",
             "engine:type:test",
           ],
           "onlyLegacy": [],
@@ -104,9 +108,9 @@ describe('phase 12 structured-versus-legacy migration audit', () => {
           ],
           "structured": [
             "engine:burn",
+            "engine:death",
             "engine:drain",
             "engine:life-gain",
-            "engine:sacrifice",
             "engine:type:test",
           ],
         },
@@ -114,17 +118,18 @@ describe('phase 12 structured-versus-legacy migration audit', () => {
           "card": "Nadier's Nightblade",
           "legacy": [
             "engine:burn",
-            "engine:sacrifice",
+            "engine:sacrifice:token",
             "engine:type:test",
           ],
-          "onlyLegacy": [],
+          "onlyLegacy": [
+            "engine:sacrifice:token",
+          ],
           "onlyStructured": [
             "engine:drain",
           ],
           "structured": [
             "engine:burn",
             "engine:drain",
-            "engine:sacrifice",
             "engine:type:test",
           ],
         },
@@ -132,20 +137,26 @@ describe('phase 12 structured-versus-legacy migration audit', () => {
           "card": "Tangletrove Kelp",
           "legacy": [
             "engine:clue-count",
-            "engine:sacrifice",
+            "engine:sacrifice:clue",
+            "engine:sacrifice:creature",
             "engine:type:clue",
             "engine:type:plant",
           ],
           "onlyLegacy": [],
           "onlyStructured": [
-            "engine:artifact-count",
-            "engine:token-count",
+            "engine:clue-animation",
+            "engine:creature-count",
+            "engine:death",
+            "engine:leaves-battlefield",
           ],
           "structured": [
-            "engine:artifact-count",
+            "engine:clue-animation",
             "engine:clue-count",
-            "engine:sacrifice",
-            "engine:token-count",
+            "engine:creature-count",
+            "engine:death",
+            "engine:leaves-battlefield",
+            "engine:sacrifice:clue",
+            "engine:sacrifice:creature",
             "engine:type:clue",
             "engine:type:plant",
           ],
@@ -167,12 +178,14 @@ describe('phase 12 structured-versus-legacy migration audit', () => {
             "engine:artifact-count",
             "engine:creature-count",
           ],
-          "onlyLegacy": [
-            "engine:creature-count",
+          "onlyLegacy": [],
+          "onlyStructured": [
+            "engine:artifact-animation",
           ],
-          "onlyStructured": [],
           "structured": [
+            "engine:artifact-animation",
             "engine:artifact-count",
+            "engine:creature-count",
           ],
         },
         {
@@ -190,11 +203,9 @@ describe('phase 12 structured-versus-legacy migration audit', () => {
           "onlyLegacy": [],
           "onlyStructured": [
             "engine:graveyard",
-            "engine:sacrifice",
           ],
           "structured": [
             "engine:graveyard",
-            "engine:sacrifice",
             "engine:type:test",
           ],
         },
@@ -206,18 +217,16 @@ describe('phase 12 structured-versus-legacy migration audit', () => {
           "onlyLegacy": [],
           "onlyStructured": [
             "engine:graveyard",
-            "engine:sacrifice",
           ],
           "structured": [
             "engine:graveyard",
-            "engine:sacrifice",
             "engine:type:zombie",
           ],
         },
         {
           "card": "Nine-Lives Familiar",
           "legacy": [
-            "engine:sacrifice",
+            "engine:death",
             "engine:type:cat",
           ],
           "onlyLegacy": [],
@@ -225,38 +234,37 @@ describe('phase 12 structured-versus-legacy migration audit', () => {
             "engine:graveyard",
           ],
           "structured": [
+            "engine:death",
             "engine:graveyard",
-            "engine:sacrifice",
             "engine:type:cat",
           ],
         },
         {
           "card": "Mushroom Watchdogs",
           "legacy": [
-            "engine:sacrifice",
+            "engine:sacrifice:food",
             "engine:type:test",
           ],
           "onlyLegacy": [],
-          "onlyStructured": [],
+          "onlyStructured": [
+            "engine:leaves-battlefield",
+          ],
           "structured": [
-            "engine:sacrifice",
+            "engine:leaves-battlefield",
+            "engine:sacrifice:food",
             "engine:type:test",
           ],
         },
         {
           "card": "Gingerbread Cabin",
           "legacy": [
-            "engine:artifact-count",
             "engine:food-count",
-            "engine:token-count",
             "engine:type:forest",
           ],
           "onlyLegacy": [],
           "onlyStructured": [],
           "structured": [
-            "engine:artifact-count",
             "engine:food-count",
-            "engine:token-count",
             "engine:type:forest",
           ],
         },
@@ -275,10 +283,17 @@ describe('phase 12 structured-versus-legacy migration audit', () => {
           ],
           "onlyLegacy": [
             "engine:creature-count",
-          ],
-          "onlyStructured": [],
-          "structured": [
             "engine:sacrifice",
+          ],
+          "onlyStructured": [
+            "engine:death",
+            "engine:leaves-battlefield",
+            "engine:sacrifice:creature",
+          ],
+          "structured": [
+            "engine:death",
+            "engine:leaves-battlefield",
+            "engine:sacrifice:creature",
           ],
         },
         {
@@ -287,27 +302,37 @@ describe('phase 12 structured-versus-legacy migration audit', () => {
             "engine:sacrifice",
             "engine:type:aura",
           ],
-          "onlyLegacy": [],
+          "onlyLegacy": [
+            "engine:sacrifice",
+          ],
           "onlyStructured": [
+            "engine:death",
             "engine:graveyard",
+            "engine:leaves-battlefield",
+            "engine:sacrifice:creature",
           ],
           "structured": [
+            "engine:death",
             "engine:graveyard",
-            "engine:sacrifice",
+            "engine:leaves-battlefield",
+            "engine:sacrifice:creature",
             "engine:type:aura",
           ],
         },
         {
           "card": "Blade of the Bloodchief",
           "legacy": [
-            "engine:sacrifice",
+            "engine:death",
             "engine:type:equipment",
             "engine:type:vampire",
           ],
           "onlyLegacy": [],
-          "onlyStructured": [],
+          "onlyStructured": [
+            "engine:creature-power",
+          ],
           "structured": [
-            "engine:sacrifice",
+            "engine:creature-power",
+            "engine:death",
             "engine:type:equipment",
             "engine:type:vampire",
           ],

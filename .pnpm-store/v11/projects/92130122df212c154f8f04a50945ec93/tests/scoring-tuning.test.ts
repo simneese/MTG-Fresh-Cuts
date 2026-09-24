@@ -3,6 +3,7 @@ import {
   combinedProtectionRate,
   engineSideBalance,
   lowSynergyScore,
+  manualThemeProtectionRate,
 } from '../src/synergy-engine/scoring';
 
 describe('deck-level scoring outcomes', () => {
@@ -55,5 +56,13 @@ describe('deck-level scoring outcomes', () => {
     });
     expect(themeOnly.score).toBe(0.3);
     expect(roleOnly.score).toBe(0.7);
+  });
+
+  it('gives manually boosted themes meaningful protection with diminishing returns', () => {
+    expect(manualThemeProtectionRate(0)).toBe(0);
+    expect(manualThemeProtectionRate(1)).toBe(0.25);
+    expect(manualThemeProtectionRate(2)).toBe(0.4);
+    expect(manualThemeProtectionRate(3)).toBe(0.5);
+    expect(manualThemeProtectionRate(8)).toBe(0.5);
   });
 });

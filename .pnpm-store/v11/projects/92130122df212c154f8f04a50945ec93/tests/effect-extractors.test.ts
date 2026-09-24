@@ -18,6 +18,7 @@ const detectorCases = [
   ['draw', 'Draw two cards.'],
   ['discard', 'Discard a card.'],
   ['recursion', 'Return target creature card from your graveyard to the battlefield.'],
+  ['graveyard-control', "Put up to one target card from a graveyard on the bottom of its owner's library."],
   ['grants-death-return', 'Target creature gains “When this creature dies, return it to the battlefield.”'],
   ['removal', 'Destroy all creatures.'],
   ['counterspell', 'Counter target spell.'],
@@ -50,6 +51,150 @@ describe('literal effect extractors', () => {
       expect(effect.evidence[0].paragraphText).toBeTruthy();
       expect(effect.evidence[0].matchedText).toBeTruthy();
       expect(effect.timing.abilityKind).toBeTruthy();
+    });
+  });
+
+  it('extracts the literal effects from Case of the Gateway Express', () => {
+    const effects = extractCardEffects(
+      fixtureCard(
+        'Case of the Gateway Express',
+        "When this Case enters, choose target creature you don't control. Each creature you control deals 1 damage to that creature.\nTo solve — Three or more creatures attacked this turn.\nSolved — Creatures you control get +1/+0.",
+        'Enchantment — Case',
+      ),
+    );
+    const detectorIds = effects.map((effect) => effect.evidence[0].detectorId);
+
+    expect(detectorIds).toEqual(
+      expect.arrayContaining([
+        'self-etb-event',
+        'damage-removal',
+        'attack-threshold',
+        'creature-anthem',
+      ]),
+    );
+  });
+
+  it('extracts the literal effects from Case of the Locked Hothouse', () => {
+    const effects = extractCardEffects(
+      fixtureCard(
+        'Case of the Locked Hothouse',
+        'You may play an additional land on each of your turns.\nTo solve — You control seven or more lands.\nSolved — You may look at the top card of your library any time, and you may play lands and cast creature and enchantment spells from the top of your library.',
+        'Enchantment — Case',
+        4,
+      ),
+    );
+    const detectorIds = effects.map((effect) => effect.evidence[0].detectorId);
+
+    expect(detectorIds).toEqual(
+      expect.arrayContaining([
+        'additional-land-play',
+        'land-count-threshold',
+        'top-library-visibility',
+        'top-library-play',
+      ]),
+    );
+  });
+
+  it('extracts the literal effects from Case of the Trampled Garden', () => {
+    const effects = extractCardEffects(
+      fixtureCard(
+        'Case of the Trampled Garden',
+        'When this Case enters, distribute two +1/+1 counters among one or two target creatures you control.\nTo solve — Creatures you control have total power 8 or greater.\nSolved — Whenever you attack, put a +1/+1 counter on target attacking creature. It gains trample until end of turn.',
+        'Enchantment — Case',
+        3,
+      ),
+    );
+    const detectorIds = effects.map((effect) => effect.evidence[0].detectorId);
+
+    expect(detectorIds).toEqual(
+      expect.arrayContaining([
+        'self-etb-event',
+        'counter-placement',
+        'creature-power-threshold',
+        'attack-event',
+        'keyword-grant',
+      ]),
+    );
+  });
+
+  it('extracts the literal effects from Case of the Shifting Visage', () => {
+    const effects = extractCardEffects(
+      fixtureCard(
+        'Case of the Shifting Visage',
+        'At the beginning of your upkeep, surveil 1.\nTo solve — There are fifteen or more cards in your graveyard.\nSolved — Whenever you cast a nonlegendary creature spell, copy that spell.',
+        'Enchantment — Case',
+        3,
+      ),
+    );
+    const detectorIds = effects.map((effect) => effect.evidence[0].detectorId);
+
+    expect(detectorIds).toEqual(
+      expect.arrayContaining([
+        'surveil',
+        'graveyard-count-threshold',
+        'cast-event',
+        'spell-copy',
+      ]),
+    );
+    expect(
+      effects.find(
+        (effect) => effect.evidence[0].detectorId === 'graveyard-count-threshold',
+      )?.sourceZone,
+    ).toBeUndefined();
+    expect(
+      effects.find((effect) => effect.evidence[0].detectorId === 'cast-event')
+        ?.direction,
+    ).toBe('listens');
+    expect(
+      effects.find((effect) => effect.evidence[0].detectorId === 'spell-copy'),
+    ).toMatchObject({
+      label: 'Copies Creature Spells',
+      subject: { kind: 'creature' },
+    });
+  });
+
+  it('carries a chosen creature type into Reflections of Littjara copy effects', () => {
+    const effects = extractCardEffects(
+      fixtureCard(
+        'Reflections of Littjara',
+        'As this enchantment enters, choose a creature type.\nWhenever you cast a spell of the chosen type, copy that spell.',
+        'Enchantment',
+        5,
+      ),
+    );
+    const castTrigger = effects.find(
+      (effect) => effect.evidence[0].detectorId === 'cast-event',
+    );
+    const copy = effects.find(
+      (effect) => effect.evidence[0].detectorId === 'spell-copy',
+    );
+    expect(castTrigger).toMatchObject({
+      label: 'Creature Cast Trigger',
+      direction: 'listens',
+      subject: { kind: 'creature' },
+    });
+    expect(copy).toMatchObject({
+      label: 'Copies Creature Spells',
+      subject: { kind: 'creature' },
+    });
+  });
+
+  it('keeps Martha Jones scoped to Clue sacrifice', () => {
+    const effects = extractCardEffects(
+      fixtureCard(
+        'Martha Jones',
+        "Woman Who Walked the Earth — When Martha Jones enters, investigate.\nWhenever you sacrifice a Clue, Martha Jones and up to one other target creature can't be blocked this turn.",
+        'Legendary Creature — Human Cleric',
+        3,
+      ),
+    );
+    const sacrifice = effects.find(
+      (effect) => effect.evidence[0].detectorId === 'sacrifice-effect',
+    );
+    expect(sacrifice).toMatchObject({
+      label: 'Clue Sacrifice Trigger',
+      direction: 'listens',
+      subject: { kind: 'token', tokenType: 'clue' },
     });
   });
 });

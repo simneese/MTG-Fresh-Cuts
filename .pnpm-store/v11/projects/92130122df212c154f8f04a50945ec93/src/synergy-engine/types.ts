@@ -1,6 +1,6 @@
-// Version 3 completes the structured-scoring migration and adds scoped quoted
-// abilities plus structured role effects. Older cached analysis must rebuild.
-export const SYNERGY_ANALYSIS_SCHEMA_VERSION = 3;
+// Version 15 keeps specific event listeners exact while producers imply broader events.
+// Older cached analysis must rebuild.
+export const SYNERGY_ANALYSIS_SCHEMA_VERSION = 28;
 
 export type EffectZone =
   | 'library'
@@ -54,10 +54,16 @@ export type EffectSubject = {
 
 export type EffectEvent =
   | 'attacks'
+  | 'animated'
+  | 'attached'
   | 'cast'
   | 'combat-damage'
+  | 'copied'
   | 'countered'
+  | 'counter-added'
+  | 'count-increased'
   | 'created'
+  | 'damaged'
   | 'discarded'
   | 'dies'
   | 'drawn'
@@ -67,8 +73,13 @@ export type EffectEvent =
   | 'life-gained'
   | 'life-lost'
   | 'milled'
+  | 'accessed'
   | 'investigated'
+  | 'keyword-granted'
+  | 'played'
+  | 'power-increased'
   | 'returned'
+  | 'restricted'
   | 'sacrificed'
   | 'searched'
   | 'surveilled'
@@ -136,11 +147,15 @@ export type CardEffect = {
 export type EngineSignals = {
   emits: Set<string>;
   listens: Set<string>;
+  eligible: Set<string>;
+  support: Set<string>;
 };
 
 export type SerializedEngineSignals = {
   emits: string[];
   listens: string[];
+  eligible: string[];
+  support: string[];
 };
 
 export type CardSynergyAnalysis = {
@@ -156,6 +171,8 @@ export function serializeEngineSignals(
   return {
     emits: [...signals.emits].sort(),
     listens: [...signals.listens].sort(),
+    eligible: [...signals.eligible].sort(),
+    support: [...signals.support].sort(),
   };
 }
 
@@ -165,5 +182,7 @@ export function deserializeEngineSignals(
   return {
     emits: new Set(signals.emits),
     listens: new Set(signals.listens),
+    eligible: new Set(signals.eligible ?? []),
+    support: new Set(signals.support ?? []),
   };
 }

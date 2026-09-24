@@ -29,19 +29,39 @@ describe('representative deck engine snapshots', () => {
     ])).toMatchInlineSnapshot(`
       [
         {
-          "enablers": 2,
+          "enablers": 1,
           "engine": "engine:sacrifice",
+          "payoffs": 0,
+        },
+        {
+          "enablers": 1,
+          "engine": "engine:death",
           "payoffs": 1,
         },
         {
           "enablers": 1,
+          "engine": "engine:leaves-battlefield",
+          "payoffs": 0,
+        },
+        {
+          "enablers": 1,
           "engine": "engine:token-count",
+          "payoffs": 0,
+        },
+        {
+          "enablers": 1,
+          "engine": "engine:creature-count",
+          "payoffs": 0,
+        },
+        {
+          "enablers": 1,
+          "engine": "engine:clue-animation",
           "payoffs": 1,
         },
         {
           "enablers": 1,
           "engine": "engine:artifact-count",
-          "payoffs": 1,
+          "payoffs": 0,
         },
         {
           "enablers": 1,
@@ -62,6 +82,11 @@ describe('representative deck engine snapshots', () => {
           "enablers": 1,
           "engine": "engine:graveyard",
           "payoffs": 1,
+        },
+        {
+          "enablers": 1,
+          "engine": "engine:sacrifice:creature",
+          "payoffs": 0,
         },
       ]
     `);

@@ -428,14 +428,19 @@ export default function Home() {
         cardCount={cardCount}
         target={target}
         onDeckNameChange={setDeckName}
-        onCardQuantityChange={(key, quantity) =>
-          setCards((current) =>
-            current.map((card) =>
+        onCardQuantityChange={(key, quantity, fallback) =>
+          setCards((current) => {
+            const found = current.some(
+              (card) => card.key === key || (!card.key && card.name === key),
+            );
+            if (!found && fallback && quantity > 0)
+              return [...current, { ...fallback, quantity }];
+            return current.map((card) =>
               card.key === key || (!card.key && card.name === key)
                 ? { ...card, quantity: Math.max(0, quantity) }
                 : card,
-            ),
-          )
+            );
+          })
         }
         onBack={() => setScreen('import')}
       />

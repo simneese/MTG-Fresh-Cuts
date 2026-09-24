@@ -5,9 +5,28 @@ export const SYNERGY_SCORING_CONFIG = {
   efficiencyProtectionMaximum: 0.15,
   indirectCommanderProtectionMaximum: 0.3,
   combinedProtectionMaximum: 0.5,
+  manualThemeFirstProtection: 0.25,
+  manualThemeSecondProtection: 0.15,
+  manualThemeAdditionalProtection: 0.1,
+  manualThemeProtectionMaximum: 0.5,
   secondaryEngineWeight: 0.25,
   tertiaryEngineWeight: 0.1,
 } as const;
+
+export function manualThemeProtectionRate(boostedThemeCount: number) {
+  if (boostedThemeCount <= 0) return 0;
+  const protection =
+    SYNERGY_SCORING_CONFIG.manualThemeFirstProtection +
+    (boostedThemeCount >= 2
+      ? SYNERGY_SCORING_CONFIG.manualThemeSecondProtection
+      : 0) +
+    Math.max(0, boostedThemeCount - 2) *
+      SYNERGY_SCORING_CONFIG.manualThemeAdditionalProtection;
+  return Math.min(
+    SYNERGY_SCORING_CONFIG.manualThemeProtectionMaximum,
+    protection,
+  );
+}
 
 export function engineSideBalance({
   side,

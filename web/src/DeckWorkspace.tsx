@@ -19,7 +19,7 @@ type Props = {
   cardCount: number;
   target: number;
   onDeckNameChange: (name: string) => void;
-  onCardQuantityChange: (key: string, quantity: number) => void;
+  onCardQuantityChange: (key: string, quantity: number, fallback?: WorkspaceCard) => void;
   onBack: () => void;
 };
 
@@ -209,7 +209,7 @@ export default function DeckWorkspace({ deckName, formatLabel, commander, cards,
       ),
     );
   }
-  if (showCutNotice) return <CutWorkspace deckName={deckName} commander={commander} cards={cards} cardCount={cardCount} target={target} contextualPopularity={contextualPopularity} onCardQuantityChange={onCardQuantityChange} onBack={() => setShowCutNotice(false)} />;
+  if (showCutNotice) return <CutWorkspace deckName={deckName} formatLabel={formatLabel} commander={commander} cards={cards} cardCount={cardCount} target={target} contextualPopularity={contextualPopularity} onCardQuantityChange={onCardQuantityChange} onBack={() => setShowCutNotice(false)} />;
   if (preparationMessage) return <main className="grid min-h-screen place-items-center bg-background text-foreground"><section className="flex min-w-[300px] flex-col items-center rounded-2xl border border-white/10 bg-[#101311] px-10 py-12 text-center shadow-2xl shadow-black/30"><LoaderCircle className="size-9 animate-spin text-lime-300" /><p className="mt-5 font-heading text-lg font-semibold text-white">Preparing Make Cuts</p><p className="mt-2 text-sm text-zinc-500">{preparationMessage}</p></section></main>;
   return <main className="min-h-screen bg-background text-foreground">
     <header className="sticky top-0 z-20 border-b border-white/8 bg-[#0b0d0c]/90 backdrop-blur-xl">
