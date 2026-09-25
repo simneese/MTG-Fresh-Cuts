@@ -127,8 +127,77 @@ describe('corrected named card regressions', () => {
   });
 
   it('Inspiring Statuary listens to artifact count through improvise', () => {
-    const signals = buildEngineSignals(effectsFor('Inspiring Statuary', 'Nonartifact spells you cast have improvise.', 'Artifact'));
+    const card = fixtureCard(
+      'Inspiring Statuary',
+      'Nonartifact spells you cast have improvise.',
+      'Artifact',
+    );
+    const effects = extractCardEffects(card);
+    const signals = buildEngineSignals(effects);
     expect(signals.listens).toContain('artifact-count-increased');
+    expect(effects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: 'Grants Improvise Cost Reduction',
+          event: 'cast',
+          direction: 'grants',
+        }),
+      ]),
+    );
+    expect(structuredRolesForCard(card, effects)).toContain('Mana ramp');
+    expect(
+      engineParticipation(signals, 'engine:enters-battlefield:artifact'),
+    ).toMatchObject({ payoff: false });
+  });
+
+  it('does not call a spell ramp merely because it has improvise itself', () => {
+    const card = fixtureCard(
+      'Self-Improvise Spell',
+      'Improvise',
+      'Sorcery',
+    );
+    const effects = extractCardEffects(card);
+
+    expect(
+      effects.some((effect) => effect.evidence[0].detectorId === 'improvise'),
+    ).toBe(true);
+    expect(
+      effects.some(
+        (effect) => effect.evidence[0].detectorId === 'cost-reduction',
+      ),
+    ).toBe(false);
+    expect(structuredRolesForCard(card, effects)).not.toContain('Mana ramp');
+  });
+
+  it('Archway of Innovation is artifact-count support, not an artifact ETB payoff', () => {
+    const signals = buildEngineSignals(
+      effectsFor(
+        'Archway of Innovation',
+        'Nonartifact spells you cast have improvise.',
+        'Land',
+      ),
+    );
+    expect(signals.listens).toContain('artifact-count-increased');
+    expect(signals.listens).not.toContain('artifact-enters-battlefield');
+    expect(
+      engineParticipation(signals, 'engine:enters-battlefield:artifact'),
+    ).toMatchObject({ payoff: false });
+  });
+
+  it('Case of the Locked Hothouse is not an ETB payoff for counting lands', () => {
+    const signals = buildEngineSignals(
+      effectsFor(
+        'Case of the Locked Hothouse',
+        'You may play an additional land on each of your turns.\nTo solve — You control seven or more lands.\nSolved — You may look at the top card of your library any time, and you may play lands and cast permanent spells from the top of your library.',
+        'Enchantment — Case',
+      ),
+    );
+    expect(
+      engineParticipation(signals, 'engine:enters-battlefield'),
+    ).toMatchObject({ payoff: false });
+    expect(
+      engineParticipation(signals, 'engine:enters-battlefield:land'),
+    ).toMatchObject({ payoff: false });
   });
 
   it('Rise and Shine marks Overload as multi-artifact animation', () => {
@@ -209,6 +278,16 @@ describe('corrected named card regressions', () => {
     expect(
       engineSpecializationRoles(broadSpellCopy, 'engine:creature-spell-copy'),
     ).toEqual({ enabler: true, payoff: true });
+    const artifactCountPayoff = buildEngineSignals(
+      effectsFor(
+        'Artifact Counter',
+        'Nonartifact spells you cast have improvise.',
+        'Artifact',
+      ),
+    );
+    expect(
+      engineSpecializationRoles(artifactCountPayoff, 'engine:clue-count'),
+    ).toMatchObject({ payoff: true });
   });
 
   it('Wilderness Reclamation is repeatable land untap ramp', () => {
@@ -249,12 +328,26 @@ describe('corrected named card regressions', () => {
           label: 'Grants First Strike to Creatures with +1/+1 Counters',
           event: 'keyword-granted',
           direction: 'grants',
+          quantity: expect.objectContaining({
+            expected: 4,
+            unbounded: true,
+          }),
         }),
       ]),
     );
     const signals = buildEngineSignals(effects);
     expect(signals.emits).toContain('creature-counter-added');
     expect(signals.listens).toContain('creature-counter-added');
+    expect(signals.emits).toContain('combat-advantage-enabled');
+    expect(signals.support).toContain('combat-damage-supported');
+    expect(
+      engineParticipation(signals, 'engine:plus-one-counters'),
+    ).toEqual(
+      expect.objectContaining({ enabler: true, payoff: true }),
+    );
+    expect(
+      engineParticipation(signals, 'engine:combat-advantage').enabler,
+    ).toBe(true);
   });
 
   it('captures Rex, Cyber-Hound graveyard control and ability inheritance', () => {
@@ -318,6 +411,159 @@ describe('corrected named card regressions', () => {
     ).toBe(true);
   });
 
+  it('weights Officious Interrogation as a scalable Clue producer', () => {
+    const effects = effectsFor(
+      'Officious Interrogation',
+      'This spell costs {W}{U} more to cast for each target beyond the first. Choose any number of target players. Investigate X times, where X is the total number of creatures those players control.',
+      'Instant',
+    );
+    const investigate = effects.find(
+      (effect) => effect.evidence[0].detectorId === 'investigate',
+    );
+
+    expect(investigate).toMatchObject({
+      quantity: {
+        minimum: 0,
+        expected: 4,
+        unbounded: true,
+        scalesWithPlayers: true,
+      },
+    });
+    expect(
+      engineParticipation(
+        buildEngineSignals(investigate ? [investigate] : []),
+        'engine:clue-count',
+      ).enabler,
+    ).toBe(true);
+  });
+
+  it('captures Forensic Gadgeteer reducing artifact activation costs', () => {
+    const effects = effectsFor(
+      'Forensic Gadgeteer',
+      'Whenever you cast an artifact spell, investigate. Activated abilities of artifacts you control cost {1} less to activate. This effect can’t reduce the mana in that cost to less than one mana.',
+      'Creature — Vedalken Artificer Detective',
+    );
+    const reduction = effects.find(
+      (effect) => effect.evidence[0].detectorId === 'cost-reduction',
+    );
+
+    expect(reduction).toMatchObject({
+      label: 'Reduces Activation Costs',
+      event: 'activated',
+      direction: 'grants',
+      subject: { kind: 'artifact', controller: 'you' },
+    });
+  });
+
+  it('captures Khalni Ambush as Fight-based creature removal', () => {
+    const card = fixtureCard(
+      'Khalni Ambush // Khalni Territory',
+      "Target creature you control fights target creature you don't control.\n//\nThis land enters tapped.\n{T}: Add {G}.",
+      'Instant // Land',
+      3,
+    );
+    const effects = extractCardEffects(card);
+    const fight = effects.find(
+      (effect) => effect.evidence[0].detectorId === 'fight',
+    );
+
+    expect(fight).toMatchObject({
+      label: 'Fights a Creature',
+      event: 'damaged',
+      direction: 'emits',
+      subject: { kind: 'creature', controller: 'opponent' },
+    });
+    expect(structuredRolesForCard(card, effects)).toContain('Removal');
+  });
+
+  it('labels Root Out with its actual removal coverage', () => {
+    const effects = effectsFor(
+      'Root Out',
+      'Choose one —\n• Destroy target artifact.\n• Destroy target enchantment.',
+      'Sorcery',
+    );
+    const removalLabels = effects
+      .filter((effect) => effect.evidence[0].detectorId === 'removal')
+      .map((effect) => effect.label);
+
+    expect(removalLabels).toEqual(
+      expect.arrayContaining(['Destroys Artifact', 'Destroys Enchantment']),
+    );
+    expect(removalLabels).not.toContain('Destroys Permanents');
+  });
+
+  it('captures both Pack Leader Dog anthem and typal protection', () => {
+    const card = fixtureCard(
+      'Pack Leader',
+      'Other Dogs you control get +1/+1.\nWhenever Pack Leader attacks, prevent all combat damage that would be dealt this turn to Dogs you control.',
+      'Creature — Dog',
+      2,
+    );
+    const effects = extractCardEffects(card);
+    const signals = buildEngineSignals(effects);
+
+    expect(effects.map((effect) => effect.label)).toEqual(
+      expect.arrayContaining([
+        'Dog Typal Bonus',
+        'Protects Dogs from Damage',
+      ]),
+    );
+    expect(structuredRolesForCard(card, effects)).toContain('Protection');
+    expect(signals.emits).toContain('creature-power-increased');
+    expect(signals.listens).toContain('type:dog-created');
+  });
+
+  it('captures Kabira Takedown scalable creature-or-planeswalker removal', () => {
+    const card = fixtureCard(
+      'Kabira Takedown // Kabira Plateau',
+      'Kabira Takedown deals damage equal to the number of creatures you control to target creature or planeswalker.\n//\nThis land enters tapped.\n{T}: Add {W}.',
+      'Instant // Land',
+      2,
+    );
+    const effects = extractCardEffects(card);
+    const removal = effects.find(
+      (effect) => effect.evidence[0].detectorId === 'damage-removal',
+    );
+
+    expect(removal).toMatchObject({
+      label: 'Deals Damage to Creature or Planeswalker',
+      quantity: {
+        expected: 1,
+        unbounded: false,
+        expression: 'one target; damage amount scales',
+      },
+    });
+    expect(structuredRolesForCard(card, effects)).toContain('Removal');
+    expect(
+      [...structuredRolesForCard(card, effects)].map(String),
+    ).not.toContain('Board wipe');
+    const signals = buildEngineSignals(effects);
+    expect(signals.listens).toContain('creature-count-increased');
+    expect(
+      engineParticipation(signals, 'engine:creature-count').payoff,
+    ).toBe(true);
+  });
+
+  it('captures qualified creature targets on the front of Razorgrass Ambush', () => {
+    const card = fixtureCard(
+      'Razorgrass Ambush // Razorgrass Field',
+      "Razorgrass Ambush deals 3 damage to target attacking or blocking creature.\n//\nAs this land enters, you may pay 3 life. If you don't, it enters tapped.\n{T}: Add {W}.",
+      'Instant // Land',
+      2,
+    );
+    const effects = extractCardEffects(card);
+    expect(effects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: 'Deals Damage to Creature',
+          event: 'damaged',
+          subject: expect.objectContaining({ kind: 'creature' }),
+        }),
+      ]),
+    );
+    expect(structuredRolesForCard(card, effects)).toContain('Removal');
+  });
+
   it('Mushroom Watchdogs is not instant-speed', () => {
     const effects = effectsFor('Mushroom Watchdogs', '{1}, Sacrifice a Food: Draw a card. Activate only as a sorcery.');
     expect(effects.find((effect) => effect.event === 'sacrificed')?.timing.instantSpeed).toBe(false);
@@ -353,16 +599,15 @@ describe('corrected named card regressions', () => {
       ),
     );
     expect(
-      cardFillsRole(
+      synergyTags(
         fixtureCard(
           'Killing Wave',
           'For each creature, its controller sacrifices it unless they pay X life.',
           'Sorcery',
         ),
-        'Board wipe',
-        ['removal', 'board wipe'],
+        [],
       ),
-    ).toBe(true);
+    ).toContain('board wipe');
   });
 
   it('Animate Dead links its graveyard Aura target, returned creature, and later sacrifice', () => {
@@ -415,5 +660,31 @@ describe('corrected named card regressions', () => {
       enabler: false,
       payoff: true,
     });
+  });
+
+  it('Dispatch captures tap, conditional exile, and its Metalcraft payoff', () => {
+    const card = fixtureCard(
+      'Dispatch',
+      'Tap target creature.\nMetalcraft — If you control three or more artifacts, exile that creature instead.',
+      'Instant',
+    );
+    const effects = extractCardEffects(card);
+    expect(effects.map((effect) => effect.label)).toEqual(
+      expect.arrayContaining([
+        'Taps Creature',
+        'Requires Artifact Count',
+        'Exiles Creature',
+      ]),
+    );
+    expect(structuredRolesForCard(card)).toContain('Removal');
+    expect(buildEngineSignals(effects).listens).toContain(
+      'artifact-count-increased',
+    );
+    expect(
+      engineParticipation(
+        buildEngineSignals(effects),
+        'engine:artifact-count',
+      ).payoff,
+    ).toBe(true);
   });
 });

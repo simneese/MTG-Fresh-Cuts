@@ -12,6 +12,7 @@ export type EngineDefinition = {
   supportSignals?: string[];
   requiresFunctionalPayoff?: boolean;
   parentEngineIds?: string[];
+  allowParentCoexistence?: boolean;
   specializationEnablerSignals?: string[];
   specializationPayoffSignals?: string[];
 };
@@ -73,6 +74,68 @@ const definitions: EngineDefinition[] = [
     legacyTags: ['creature count'],
     enablerSignals: ['creature-created', 'creature-count-increased'],
     payoffSignals: ['creature-count-increased'],
+  },
+  {
+    id: 'engine:enters-battlefield',
+    label: 'Enters the Battlefield',
+    desiredEnablersPerPayoff: 3,
+    legacyTags: [],
+    enablerSignals: ['permanent-enters-battlefield'],
+    payoffSignals: ['permanent-etb-triggered'],
+    eligibilitySignals: ['permanent-enters-battlefield'],
+  },
+  ...[
+    ['creature', 'Creature'],
+    ['artifact', 'Artifact'],
+    ['enchantment', 'Enchantment'],
+    ['land', 'Land'],
+    ['token', 'Token'],
+  ].map(([type, label]) => ({
+    id: `engine:enters-battlefield:${type}`,
+    label: `${label} Enters the Battlefield`,
+    desiredEnablersPerPayoff: 3,
+    legacyTags: [],
+    enablerSignals: [`${type}-enters-battlefield`],
+    payoffSignals: [`${type}-etb-triggered`],
+    eligibilitySignals: [`${type}-enters-battlefield`],
+    parentEngineIds: ['engine:enters-battlefield'],
+    allowParentCoexistence: true,
+  } satisfies EngineDefinition)),
+  ...[
+    'blood',
+    'clue',
+    'food',
+    'gold',
+    'incubator',
+    'map',
+    'powerstone',
+    'treasure',
+  ].map((type) => ({
+    id: `engine:enters-battlefield:${type}`,
+    label: `${type.replace(/\b\w/g, (letter) => letter.toUpperCase())} Enters the Battlefield`,
+    desiredEnablersPerPayoff: 3,
+    legacyTags: [],
+    enablerSignals: [`${type}-enters-battlefield`],
+    payoffSignals: [`${type}-etb-triggered`],
+    eligibilitySignals: [`${type}-enters-battlefield`],
+    specializationPayoffSignals: [
+      'artifact-etb-triggered',
+      'token-etb-triggered',
+    ],
+    parentEngineIds: [
+      'engine:enters-battlefield:artifact',
+      'engine:enters-battlefield:token',
+      'engine:enters-battlefield',
+    ],
+    allowParentCoexistence: true,
+  } satisfies EngineDefinition)),
+  {
+    id: 'engine:self-enters-battlefield',
+    label: 'Self ETB',
+    desiredEnablersPerPayoff: 2,
+    legacyTags: [],
+    enablerSignals: ['self-etb-retrigger-enabled'],
+    payoffSignals: ['self-etb-triggered'],
   },
   {
     id: 'engine:creature-cast',
@@ -146,6 +209,7 @@ const definitions: EngineDefinition[] = [
     supportSignals: ['clue-animation-supported'],
     requiresFunctionalPayoff: true,
     parentEngineIds: ['engine:artifact-animation'],
+    allowParentCoexistence: true,
   },
   {
     id: 'engine:creature-power',
@@ -162,6 +226,23 @@ const definitions: EngineDefinition[] = [
     legacyTags: ['combat damage'],
     enablerSignals: ['combat-damage-enabled'],
     payoffSignals: ['*-combat-damage'],
+    supportSignals: ['combat-damage-supported'],
+  },
+  {
+    id: 'engine:combat-advantage',
+    label: 'Combat Advantage',
+    desiredEnablersPerPayoff: 2,
+    legacyTags: [],
+    enablerSignals: ['combat-advantage-enabled'],
+    payoffSignals: ['combat-advantage-enabled'],
+  },
+  {
+    id: 'engine:plus-one-counters',
+    label: '+1/+1 Counters',
+    desiredEnablersPerPayoff: 2,
+    legacyTags: ['+1/+1 counters'],
+    enablerSignals: ['creature-counter-added'],
+    payoffSignals: ['creature-counter-added'],
   },
   {
     id: 'engine:artifact-count',
@@ -178,7 +259,12 @@ const definitions: EngineDefinition[] = [
     legacyTags: ['treasure count'],
     enablerSignals: ['treasure-created'],
     payoffSignals: ['treasure-created'],
+    specializationPayoffSignals: [
+      'artifact-count-increased',
+      'token-count-increased',
+    ],
     parentEngineIds: ['engine:artifact-count', 'engine:token-count'],
+    allowParentCoexistence: true,
   },
   {
     id: 'engine:clue-count',
@@ -187,7 +273,12 @@ const definitions: EngineDefinition[] = [
     legacyTags: ['clue count'],
     enablerSignals: ['clue-created', 'investigated'],
     payoffSignals: ['clue-created'],
+    specializationPayoffSignals: [
+      'artifact-count-increased',
+      'token-count-increased',
+    ],
     parentEngineIds: ['engine:artifact-count', 'engine:token-count'],
+    allowParentCoexistence: true,
   },
   {
     id: 'engine:food-count',
@@ -196,7 +287,12 @@ const definitions: EngineDefinition[] = [
     legacyTags: ['food count'],
     enablerSignals: ['food-created'],
     payoffSignals: ['food-created'],
+    specializationPayoffSignals: [
+      'artifact-count-increased',
+      'token-count-increased',
+    ],
     parentEngineIds: ['engine:artifact-count', 'engine:token-count'],
+    allowParentCoexistence: true,
   },
   {
     id: 'engine:life-gain',
@@ -295,6 +391,24 @@ function matchesSignal(pattern: string, signal: string) {
 }
 
 export function engineDefinitionForId(id: string) {
+  if (id.startsWith('engine:enters-battlefield:type:')) {
+    const type = id.slice('engine:enters-battlefield:type:'.length);
+    return {
+      id,
+      label: `${type.replace(/\b\w/g, (letter) => letter.toUpperCase())} Enters the Battlefield`,
+      desiredEnablersPerPayoff: 3,
+      legacyTags: [],
+      enablerSignals: [`type:${type}-enters-battlefield`],
+      payoffSignals: [`type:${type}-etb-triggered`],
+      eligibilitySignals: [`type:${type}-enters-battlefield`],
+      specializationPayoffSignals: ['creature-etb-triggered'],
+      parentEngineIds: [
+        'engine:enters-battlefield:creature',
+        'engine:enters-battlefield',
+      ],
+      allowParentCoexistence: true,
+    } satisfies EngineDefinition;
+  }
   if (id.startsWith('engine:sacrifice:')) {
     const type = id.slice('engine:sacrifice:'.length);
     const namedArtifactTokens = new Set([
@@ -323,6 +437,7 @@ export function engineDefinitionForId(id: string) {
           ? ['engine:sacrifice:artifact', 'engine:sacrifice:token']
           : []),
       ],
+      allowParentCoexistence: true,
     } satisfies EngineDefinition;
   }
   if (id.startsWith('engine:type:')) {
@@ -405,6 +520,17 @@ export function engineSpecializationRoles(
   };
 }
 
+export function engineSpecializationIsAvailable(
+  engineId: string,
+  parentIsIgnored: (parentEngineId: string) => boolean,
+) {
+  const definition = engineDefinitionForId(engineId);
+  return Boolean(
+    definition?.allowParentCoexistence ||
+      definition?.parentEngineIds?.some(parentIsIgnored),
+  );
+}
+
 export function engineIsActive(
   deckSignals: Iterable<EngineSignals>,
   engineId: string,
@@ -437,9 +563,9 @@ export function engineDefinitions() {
 export function dedupeEngineFamilies(engineIds: string[]) {
   const result = new Set(engineIds);
   engineIds.forEach((engineId) => {
-    engineDefinitionForId(engineId)?.parentEngineIds?.forEach((parentId) =>
-      result.delete(parentId),
-    );
+    const definition = engineDefinitionForId(engineId);
+    if (definition?.allowParentCoexistence) return;
+    definition?.parentEngineIds?.forEach((parentId) => result.delete(parentId));
   });
   return [...result];
 }

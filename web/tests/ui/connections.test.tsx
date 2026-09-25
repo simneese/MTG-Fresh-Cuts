@@ -86,6 +86,61 @@ describe('connection UI', () => {
     });
   });
 
+  it('builds a live optimization comparison from two selected deck cards', () => {
+    const card = (name: string, oracleText: string) => ({
+      name,
+      quantity: 1,
+      cardData: {
+        cacheKey: name.toLowerCase(),
+        id: name.toLowerCase(),
+        name,
+        nameKey: name.toLowerCase(),
+        type: 'Instant',
+        typeLine: 'Instant',
+        manaCost: '{1}{W}',
+        manaValue: 2,
+        colors: ['W'],
+        colorIdentity: ['W'],
+        oracleText,
+        scryfallUri: '',
+        fetchedAt: 0,
+      },
+    });
+    const view = render(
+      <CutWorkspace
+        deckName="Comparison deck"
+        formatLabel="Commander"
+        commander=""
+        cards={[
+          card('First option', 'Exile target creature.'),
+          card('Second option', 'Tap target creature.'),
+        ]}
+        cardCount={2}
+        target={100}
+        contextualPopularity={new Map()}
+        onCardQuantityChange={() => {}}
+        onBack={() => {}}
+      />,
+    );
+    const panel = within(view.container);
+    const copyButton = panel.getByRole('button', {
+      name: 'Copy diagnostic',
+    }) as HTMLButtonElement;
+    expect(copyButton.disabled).toBe(true);
+    fireEvent.change(panel.getByLabelText('Card 1'), {
+      target: { value: 'First option' },
+    });
+    fireEvent.change(panel.getByLabelText('Card 2'), {
+      target: { value: 'Second option' },
+    });
+    expect(
+      (panel.getByRole('button', {
+        name: 'Copy diagnostic',
+      }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+    expect(panel.getByText(/Current result:/)).toBeTruthy();
+  });
+
   it('collapses overflow into a more menu without losing hidden choices', () => {
     const onSelect = vi.fn();
     render(

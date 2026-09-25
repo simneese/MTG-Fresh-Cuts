@@ -1,6 +1,5 @@
 export type RoleName =
   | 'Tutor'
-  | 'Board wipe'
   | 'Removal'
   | 'Card draw'
   | 'Mana ramp'
@@ -35,14 +34,6 @@ export const ROLE_DEFINITIONS: readonly RoleDefinition[] = [
     maximum: 3,
     qualityTags: ['tutor'],
     comparisonGroups: ['unrestricted tutor', 'typed tutor', 'top-of-library tutor'],
-    themeDrivers: [],
-  },
-  {
-    name: 'Board wipe',
-    minimum: 2,
-    maximum: 4,
-    qualityTags: ['removal'],
-    comparisonGroups: ['creature wipe', 'noncreature wipe', 'modal wipe'],
     themeDrivers: [],
   },
   {

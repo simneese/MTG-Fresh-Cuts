@@ -60,7 +60,10 @@ function subjectNames(effect: CardEffect) {
 function directSignals(effect: CardEffect) {
   const signals = new Set<string>();
   effect.subject.creatureTypes?.forEach((type) =>
-    signals.add(`type:${type}-present`),
+    {
+      signals.add(`type:${type}-present`);
+      signals.add(`type:${type}-${effect.event}`);
+    },
   );
   const detectorId = effect.evidence[0]?.detectorId ?? '';
   const isTypalMetadata = detectorId.startsWith('typal-');
@@ -118,7 +121,16 @@ function listeningSignals(effect: CardEffect) {
     )
   )
     return direct;
-  return expandEmittedSignals(direct);
+  const expanded = expandEmittedSignals(direct);
+  // "Uses/counts artifacts" is represented as listening for artifact-created
+  // so it can connect to artifact producers. That does not make it an ETB
+  // trigger; causal creation -> entry implications belong only to producers.
+  if (effect.event === 'created') {
+    [...expanded]
+      .filter((signal) => signal.endsWith('-enters-battlefield'))
+      .forEach((signal) => expanded.delete(signal));
+  }
+  return expanded;
 }
 
 function isSourceScopedExileListener(effect: CardEffect) {
@@ -220,6 +232,46 @@ export function buildEngineSignals(effects: CardEffect[]): EngineSignals {
     )
       listens.add('graveyard-stocked');
     const detectorId = effect.evidence[0]?.detectorId ?? '';
+    const paragraphText = effect.evidence[0]?.paragraphText ?? '';
+    // Landfall and other Land ETB payoffs are enabled by effects that create
+    // additional land entries, even when the printed action is "play" or
+    // "search" rather than literally "put ... onto the battlefield."
+    if (
+      detectorId === 'additional-land-play' ||
+      (detectorId === 'tutor' && /\bland(?: card)?\b/.test(paragraphText)) ||
+      (detectorId === 'top-library-play' && /\bplay lands?\b/.test(paragraphText)) ||
+      (effect.destinationZone === 'battlefield' &&
+        (effect.subject.kind === 'land' || /\bland(?: card)?\b/.test(paragraphText)))
+    )
+      emittedSeeds.add('land-enters-battlefield');
+    if (detectorId === 'self-etb-event')
+      listens.add('self-etb-triggered');
+    if (detectorId === 'gravestorm') {
+      // Gravestorm counts every permanent put into a graveyard from the
+      // battlefield. Creature death is the typed engine currently exposed in
+      // the UI; retain the broad signal for future permanent-type engines.
+      listens.add('creature-dies');
+      listens.add('permanent-put-into-graveyard-from-battlefield');
+    }
+    if (
+      detectorId === 'etb-event' ||
+      detectorId === 'named-token-etb-event' ||
+      (detectorId === 'typal-event-payoff' &&
+        effect.event === 'enters-battlefield')
+    ) {
+      signals.forEach((signal) => {
+        if (signal.endsWith('-enters-battlefield'))
+          listens.add(
+            signal.replace(/-enters-battlefield$/, '-etb-triggered'),
+          );
+      });
+    }
+    if (
+      detectorId === 'blink-return' ||
+      (effect.sourceZone === 'graveyard' &&
+        effect.destinationZone === 'battlefield')
+    )
+      emittedSeeds.add('self-etb-retrigger-enabled');
     if (detectorId === 'artifact-animation') {
       emittedSeeds.add('artifact-animation-enabled');
       emittedSeeds.add('creature-count-increased');
@@ -233,6 +285,13 @@ export function buildEngineSignals(effects: CardEffect[]): EngineSignals {
     if (detectorId === 'counter-conditional-keyword-grant')
       listens.add('creature-counter-added');
     if (
+      detectorId === 'typal-group-bonus' &&
+      /[+-]\d+\/[+-]\d+|\b(?:power|toughness)\b/.test(
+        effect.evidence[0]?.paragraphText ?? '',
+      )
+    )
+      emittedSeeds.add('creature-power-increased');
+    if (
       ['unblockable-grant', 'combat-damage-amplifier', 'extra-combat'].includes(
         detectorId,
       ) ||
@@ -242,6 +301,31 @@ export function buildEngineSignals(effects: CardEffect[]): EngineSignals {
         ))
     )
       emittedSeeds.add('combat-damage-enabled');
+    if (
+      ['keyword-grant', 'counter-conditional-keyword-grant'].includes(
+        detectorId,
+      ) &&
+      /\bfirst strike\b/.test(effect.evidence[0]?.matchedText ?? '')
+    )
+      support.add('combat-damage-supported');
+    if (
+      (['keyword-grant', 'counter-conditional-keyword-grant'].includes(
+        detectorId,
+      ) &&
+        /\b(?:first strike|double strike|deathtouch)\b/.test(
+          effect.evidence[0]?.matchedText ?? '',
+        )) ||
+      (detectorId === 'damage-prevention-protection' &&
+        /\bcombat damage\b/.test(paragraphText)) ||
+      ['creature-power-boost', 'creature-anthem'].includes(detectorId) ||
+      (detectorId === 'typal-group-bonus' &&
+        /[+-]\d+\/[+-]\d+|\b(?:power|toughness)\b/.test(paragraphText))
+    )
+      emittedSeeds.add('combat-advantage-enabled');
+    if (detectorId === 'attack-event')
+      listens.add('combat-advantage-enabled');
+    if (detectorId === 'combat-damage-event')
+      listens.add('combat-advantage-enabled');
     if (detectorId === 'spell-copy') {
       const spellCopyText = effect.evidence[0]?.paragraphText ?? '';
       const creatureSpecific =
@@ -278,7 +362,8 @@ export function buildEngineSignals(effects: CardEffect[]): EngineSignals {
       listens.add('copyable-creature');
     if (
       effect.direction === 'listens' &&
-      !isSourceScopedExileListener(effect)
+      !isSourceScopedExileListener(effect) &&
+      detectorId !== 'self-etb-event'
     )
       listeningSignals(effect).forEach((signal) => listens.add(signal));
     if (EMITTING_DIRECTIONS.has(effect.direction)) {

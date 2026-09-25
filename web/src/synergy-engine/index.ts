@@ -18,6 +18,7 @@ export {
   engineDefinitions,
   engineSpecializationParticipation,
   engineSpecializationRoles,
+  engineSpecializationIsAvailable,
   engineFamilyForLegacyTag,
   engineParticipation,
   engineIsActive,
@@ -58,3 +59,11 @@ export type {
   NamedTokenType,
   SerializedEngineSignals,
 } from './types';
+export {
+  buildOptimizationComparisonReport,
+  serializeOptimizationComparisonReport,
+} from './optimization-report';
+export type {
+  OptimizationCardReport,
+  OptimizationComparisonReport,
+} from './optimization-report';

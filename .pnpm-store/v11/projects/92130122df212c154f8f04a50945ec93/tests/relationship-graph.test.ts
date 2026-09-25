@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { extractCardEffects } from '../src/synergy-engine/extract-effects';
 import { buildEngineSignals, signalPathsBetween } from '../src/synergy-engine/relationship-graph';
-import { dedupeEngineFamilies } from '../src/synergy-engine/engine-registry';
+import {
+  dedupeEngineFamilies,
+  engineSpecializationIsAvailable,
+} from '../src/synergy-engine/engine-registry';
 import {
   engineIsActive,
   engineParticipation,
@@ -18,6 +21,17 @@ describe('relationship graph implications', () => {
     expect(producer.emits).toContain('creature-dies');
     expect(producer.emits).toContain('creature-leaves-battlefield');
     expect(signalPathsBetween(producer, signals('Whenever a creature dies, draw a card.'))).toContain('creature-dies');
+  });
+
+  it('treats Gravestorm as a creature-death payoff', () => {
+    const result = signals('Gravestorm');
+
+    expect(result.listens).toContain('creature-dies');
+    expect(
+      engineParticipation(result, 'engine:death').payoff,
+    ).toBe(true);
+    expect(result.listens).not.toContain('creature-exiled');
+    expect(result.listens).not.toContain('creature-leaves-battlefield');
   });
 
   it('connects investigate to Clue, artifact, and token creation', () => {
@@ -43,6 +57,93 @@ describe('relationship graph implications', () => {
     expect(result.emits).toContain('creature-enters-battlefield');
     expect(result.emits).not.toContain('creature-leaves-battlefield');
     expect(result.emits).not.toContain('creature-dies');
+  });
+
+  it('connects battlefield-entry producers to ETB payoffs', () => {
+    const reanimation = signals(
+      'Return target creature card from your graveyard to the battlefield.',
+    );
+    const tokenProducer = signals('Create two creature tokens.');
+    const broadPayoff = signals(
+      'Whenever another creature enters the battlefield under your control, you gain 1 life.',
+    );
+    const selfEtbPayoff = signals(
+      'When this creature enters, draw a card.',
+    );
+
+    expect(
+      engineParticipation(reanimation, 'engine:enters-battlefield'),
+    ).toMatchObject({ enabler: true, payoff: false });
+    expect(
+      engineParticipation(tokenProducer, 'engine:enters-battlefield'),
+    ).toMatchObject({ enabler: true });
+    expect(
+      engineParticipation(broadPayoff, 'engine:enters-battlefield'),
+    ).toMatchObject({ payoff: true });
+    expect(
+      engineParticipation(selfEtbPayoff, 'engine:enters-battlefield'),
+    ).toMatchObject({ enabler: false, payoff: false });
+    expect(
+      engineParticipation(selfEtbPayoff, 'engine:self-enters-battlefield'),
+    ).toMatchObject({ enabler: false, payoff: true });
+    expect(
+      engineParticipation(reanimation, 'engine:self-enters-battlefield'),
+    ).toMatchObject({ enabler: true, payoff: false });
+    expect(
+      engineParticipation(broadPayoff, 'engine:enters-battlefield:creature'),
+    ).toMatchObject({ payoff: true });
+  });
+
+  it('uses blink as a self-ETB retrigger enabler', () => {
+    const blink = signals(
+      'Exile target creature you control, then return it to the battlefield under its owner’s control.',
+    );
+    expect(
+      engineParticipation(blink, 'engine:self-enters-battlefield'),
+    ).toMatchObject({ enabler: true });
+  });
+
+  it('keeps subtype ETB signals directional', () => {
+    const clueEntry = signals('Create a Clue token.');
+    const clueWatcher = signals(
+      'Whenever a Clue enters the battlefield under your control, draw a card.',
+    );
+    const artifactWatcher = signals(
+      'Whenever an artifact enters the battlefield under your control, draw a card.',
+    );
+    [
+      'clue-enters-battlefield',
+      'artifact-enters-battlefield',
+      'token-enters-battlefield',
+      'permanent-enters-battlefield',
+    ].forEach((signal) => expect(clueEntry.emits).toContain(signal));
+    expect(
+      engineParticipation(clueWatcher, 'engine:enters-battlefield:clue'),
+    ).toMatchObject({ payoff: true });
+    expect(
+      engineParticipation(artifactWatcher, 'engine:enters-battlefield:clue'),
+    ).toMatchObject({ payoff: false });
+  });
+
+  it('classifies ETB engines from the trigger subject, not the resulting effect', () => {
+    const landTrigger = signals(
+      'Whenever a land enters the battlefield under your control, create a 1/1 creature token.',
+    );
+    const creatureTrigger = signals(
+      'Whenever a creature enters the battlefield under your control, you may put a land card from your hand onto the battlefield.',
+    );
+    expect(
+      engineParticipation(landTrigger, 'engine:enters-battlefield:land'),
+    ).toMatchObject({ payoff: true });
+    expect(
+      engineParticipation(landTrigger, 'engine:enters-battlefield:creature'),
+    ).toMatchObject({ payoff: false });
+    expect(
+      engineParticipation(creatureTrigger, 'engine:enters-battlefield:creature'),
+    ).toMatchObject({ payoff: true });
+    expect(
+      engineParticipation(creatureTrigger, 'engine:enters-battlefield:land'),
+    ).toMatchObject({ payoff: false });
   });
 
   it('marks a creature that casts itself from the graveyard as recurring fodder', () => {
@@ -134,6 +235,42 @@ describe('relationship graph implications', () => {
     ).toEqual(['engine:creature-spell-copy']);
   });
 
+  it('keeps true subtype engines alongside their parent engines', () => {
+    expect(
+      dedupeEngineFamilies([
+        'engine:artifact-count',
+        'engine:token-count',
+        'engine:clue-count',
+      ]),
+    ).toEqual([
+      'engine:artifact-count',
+      'engine:token-count',
+      'engine:clue-count',
+    ]);
+    expect(
+      engineSpecializationIsAvailable('engine:clue-count', () => false),
+    ).toBe(true);
+    expect(
+      engineSpecializationIsAvailable(
+        'engine:creature-spell-copy',
+        () => false,
+      ),
+    ).toBe(false);
+    expect(
+      dedupeEngineFamilies([
+        'engine:sacrifice',
+        'engine:sacrifice:artifact',
+        'engine:sacrifice:token',
+        'engine:sacrifice:clue',
+      ]),
+    ).toEqual([
+      'engine:sacrifice',
+      'engine:sacrifice:artifact',
+      'engine:sacrifice:token',
+      'engine:sacrifice:clue',
+    ]);
+  });
+
   it('does not turn source-scoped exile references into generic exile payoffs', () => {
     const scoped = buildEngineSignals([
       {
@@ -204,7 +341,7 @@ describe('relationship graph implications', () => {
     expect(engineParticipation(exiled, 'engine:leaves-battlefield').enabler).toBe(true);
   });
 
-  it('deduplicates specific sacrifice themes over their umbrellas', () => {
+  it('keeps permanent, card-type, and subtype sacrifice themes together', () => {
     expect(
       dedupeEngineFamilies([
         'engine:sacrifice',
@@ -212,7 +349,12 @@ describe('relationship graph implications', () => {
         'engine:sacrifice:token',
         'engine:sacrifice:clue',
       ]),
-    ).toEqual(['engine:sacrifice:clue']);
+    ).toEqual([
+      'engine:sacrifice',
+      'engine:sacrifice:artifact',
+      'engine:sacrifice:token',
+      'engine:sacrifice:clue',
+    ]);
   });
 
   it('does not broaden a Clue-sacrifice listener into other sacrifice or LTB events', () => {
@@ -265,6 +407,49 @@ describe('relationship graph implications', () => {
     ).toBe(true);
   });
 
+  it('activates the Land ETB engine when landfall payoffs have lands available', () => {
+    const landfallPayoff = signals(
+      'Landfall — Whenever a land enters the battlefield under your control, draw a card.',
+    );
+    const landParticipant = signals('');
+    landParticipant.eligible.add('land-enters-battlefield');
+
+    expect(
+      engineParticipation(
+        landfallPayoff,
+        'engine:enters-battlefield:land',
+      ).payoff,
+    ).toBe(true);
+    expect(
+      engineIsActive(
+        [landfallPayoff, landParticipant],
+        'engine:enters-battlefield:land',
+      ),
+    ).toBe(true);
+  });
+
+  it('treats additional land plays and land fetching as Land ETB enablers', () => {
+    const additionalPlay = signals(
+      'You may play one additional land this turn.',
+    );
+    const landFetch = signals(
+      'Search your library for a basic land card, put that card onto the battlefield tapped, then shuffle.',
+    );
+    const landToHand = signals(
+      'Search your library for a basic land card, reveal it, put it into your hand, then shuffle.',
+    );
+
+    [additionalPlay, landFetch, landToHand].forEach((result) => {
+      expect(result.emits).toContain('land-enters-battlefield');
+      expect(
+        engineParticipation(
+          result,
+          'engine:enters-battlefield:land',
+        ).enabler,
+      ).toBe(true);
+    });
+  });
+
   it('connects combat-access effects to combat-damage payoffs', () => {
     const evasion = signals(
       "Target legendary creature can't be blocked this turn.",
@@ -281,5 +466,41 @@ describe('relationship graph implications', () => {
     ).toBe(true);
     expect(engineIsActive([evasion], 'engine:combat-damage')).toBe(false);
     expect(engineIsActive([evasion, payoff], 'engine:combat-damage')).toBe(true);
+  });
+
+  it('treats granted first strike as Combat Damage support, not an enabler', () => {
+    const firstStrike = signals(
+      'Target creature gains first strike until end of turn.',
+    );
+    expect(firstStrike.support).toContain('combat-damage-supported');
+    expect(
+      engineParticipation(firstStrike, 'engine:combat-damage'),
+    ).toEqual({
+      enabler: false,
+      payoff: false,
+      eligible: false,
+      support: true,
+    });
+  });
+
+  it('connects combat advantages to attack and combat-damage incentives', () => {
+    const firstStrike = signals(
+      'Target creature gains first strike until end of turn.',
+    );
+    const attackPayoff = signals(
+      'Whenever this creature attacks, draw a card.',
+    );
+    expect(
+      engineParticipation(firstStrike, 'engine:combat-advantage').enabler,
+    ).toBe(true);
+    expect(
+      engineParticipation(attackPayoff, 'engine:combat-advantage').payoff,
+    ).toBe(true);
+    expect(
+      engineIsActive(
+        [firstStrike, attackPayoff],
+        'engine:combat-advantage',
+      ),
+    ).toBe(true);
   });
 });

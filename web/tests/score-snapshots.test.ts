@@ -54,8 +54,43 @@ describe('representative deck engine snapshots', () => {
           "payoffs": 0,
         },
         {
+          "enablers": 2,
+          "engine": "engine:enters-battlefield",
+          "payoffs": 0,
+        },
+        {
+          "enablers": 1,
+          "engine": "engine:enters-battlefield:creature",
+          "payoffs": 0,
+        },
+        {
+          "enablers": 1,
+          "engine": "engine:enters-battlefield:artifact",
+          "payoffs": 0,
+        },
+        {
+          "enablers": 1,
+          "engine": "engine:enters-battlefield:token",
+          "payoffs": 0,
+        },
+        {
+          "enablers": 1,
+          "engine": "engine:enters-battlefield:clue",
+          "payoffs": 0,
+        },
+        {
+          "enablers": 1,
+          "engine": "engine:self-enters-battlefield",
+          "payoffs": 0,
+        },
+        {
           "enablers": 1,
           "engine": "engine:clue-animation",
+          "payoffs": 1,
+        },
+        {
+          "enablers": 0,
+          "engine": "engine:combat-advantage",
           "payoffs": 1,
         },
         {

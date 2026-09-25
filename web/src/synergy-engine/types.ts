@@ -1,6 +1,6 @@
 // Version 15 keeps specific event listeners exact while producers imply broader events.
 // Older cached analysis must rebuild.
-export const SYNERGY_ANALYSIS_SCHEMA_VERSION = 32;
+export const SYNERGY_ANALYSIS_SCHEMA_VERSION = 57;
 
 export type EffectZone =
   | 'library'
@@ -53,6 +53,7 @@ export type EffectSubject = {
 };
 
 export type EffectEvent =
+  | 'activated'
   | 'attacks'
   | 'animated'
   | 'attached'

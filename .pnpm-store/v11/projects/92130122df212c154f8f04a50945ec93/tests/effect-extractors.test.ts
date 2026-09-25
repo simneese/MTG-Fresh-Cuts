@@ -5,6 +5,7 @@ import { fixtureCard } from './fixtures';
 const detectorCases = [
   ['sacrifice-effect', 'Sacrifice a creature: Draw a card.'],
   ['dies-trigger', 'Whenever another creature dies, draw a card.'],
+  ['gravestorm', 'Gravestorm'],
   ['typal-conditional-bonus', 'If equipped creature is a Vampire, put two counters on it instead.'],
   ['typal-group-bonus', 'Other Vampires you control get +1/+1.'],
   ['typal-event-payoff', 'Whenever another Vampire dies, draw a card.'],
@@ -51,6 +52,38 @@ describe('literal effect extractors', () => {
       expect(effect.evidence[0].paragraphText).toBeTruthy();
       expect(effect.evidence[0].matchedText).toBeTruthy();
       expect(effect.timing.abilityKind).toBeTruthy();
+    });
+  });
+
+  it('does not reinterpret a creature-cast trigger as an ETB trigger', () => {
+    const effects = extractCardEffects(
+      fixtureCard(
+        'Cast trigger with entry instructions',
+        'Whenever you cast a creature spell, it enters the battlefield with an additional +1/+1 counter on it.',
+      ),
+    );
+    const detectorIds = effects.map((effect) => effect.evidence[0].detectorId);
+
+    expect(detectorIds).toContain('cast-event');
+    expect(detectorIds).not.toContain('etb-event');
+  });
+
+  it.each([
+    ['Draw X cards.', 'draw'],
+    ['Create X Treasure tokens.', 'token-create'],
+    ['Target opponent discards X cards.', 'discard'],
+    ['Sacrifice X creatures: Draw a card.', 'sacrifice-effect'],
+  ])('gives scalable quantity credit to %s', (text, detectorId) => {
+    const effect = extractCardEffects(fixtureCard(text, text)).find(
+      (candidate) => candidate.evidence[0].detectorId === detectorId,
+    );
+
+    expect(effect).toMatchObject({
+      quantity: {
+        minimum: 0,
+        expected: 4,
+        unbounded: true,
+      },
     });
   });
 
