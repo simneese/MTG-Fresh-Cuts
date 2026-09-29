@@ -20,6 +20,209 @@ const effectsFor = (name: string, text: string, type?: string) =>
   extractCardEffects(fixtureCard(name, text, type));
 
 describe('corrected named card regressions', () => {
+  it('captures both Many Partings effects without making land-to-hand an ETB', () => {
+    const card = fixtureCard(
+      'Many Partings',
+      'Search your library for a basic land card, reveal it, put it into your hand, then shuffle. Create a Food token.',
+      'Sorcery',
+    );
+    const effects = extractCardEffects(card);
+    expect(effects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: 'Searches for Basic Land',
+          subject: expect.objectContaining({ kind: 'land' }),
+          sourceZone: 'library',
+          destinationZone: 'hand',
+        }),
+        expect.objectContaining({ label: 'Creates Food' }),
+      ]),
+    );
+    const signals = buildEngineSignals(effects);
+    expect(signals.emits).not.toContain('land-enters-battlefield');
+    expect(signals.support).toContain('land-etb-supported');
+  });
+
+  it('captures Sink into Stupor as flexible bounce and stack protection', () => {
+    const card = fixtureCard(
+      'Sink into Stupor // Soporific Springs',
+      "Return target spell or nonland permanent an opponent controls to its owner's hand.\n//\nAs this land enters, you may pay 3 life. If you don't, it enters tapped.\n{T}: Add {U}.",
+      'Instant // Land',
+    );
+    const effects = extractCardEffects(card);
+    const bounce = effects.find(
+      (effect) => effect.evidence[0]?.detectorId === 'bounce',
+    );
+    expect(bounce).toMatchObject({
+      label: 'Returns Spell or Nonland Permanent to Hand',
+      event: 'returned',
+      direction: 'emits',
+      destinationZone: 'hand',
+      subject: {
+        kind: 'permanent',
+        controller: 'opponent',
+        qualifiers: ['nonland', 'spell-option', 'single-target'],
+      },
+    });
+    const roles = structuredRolesForCard(card, effects);
+    expect(roles).toContain('Removal');
+    expect(roles).toContain('Protection');
+  });
+
+  it('captures Beyeen Veil group power reduction on its spell face', () => {
+    const card = fixtureCard(
+      'Beyeen Veil // Beyeen Coast',
+      'Creatures your opponents control get -2/-0 until end of turn.\n//\nBeyeen Coast enters the battlefield tapped.\n{T}: Add {U}.',
+      'Instant // Land',
+    );
+    const effects = extractCardEffects(card);
+    const reduction = effects.find(
+      (effect) => effect.evidence[0]?.detectorId === 'opposing-power-reduction',
+    );
+    expect(reduction).toMatchObject({
+      label: 'Reduces Opposing Creature Power',
+      event: 'power-reduced',
+      direction: 'emits',
+      subject: { kind: 'creature', controller: 'opponent' },
+      quantity: {
+        expected: 4,
+        unbounded: true,
+        scalesWithPlayers: true,
+      },
+    });
+    const roles = structuredRolesForCard(card, effects);
+    expect(roles).toContain('Protection');
+    expect(
+      engineParticipation(
+        buildEngineSignals(effects),
+        'engine:combat-advantage',
+      ).enabler,
+    ).toBe(true);
+  });
+
+  it('captures Mowu-style counter amplification as a persistent payoff', () => {
+    const card = fixtureCard(
+      'Mowu, Loyal Companion',
+      'Vigilance, trample\nIf one or more +1/+1 counters would be put on Mowu, Loyal Companion, that many plus one +1/+1 counters are put on it instead.',
+      'Legendary Creature — Dog',
+    );
+    const effects = extractCardEffects(card);
+    const amplifier = effects.find(
+      (effect) => effect.evidence[0]?.detectorId === 'counter-amplifier',
+    );
+    expect(effects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: 'Has Vigilance',
+          direction: 'grants',
+          subject: expect.objectContaining({ qualifiers: ['self'] }),
+        }),
+        expect.objectContaining({
+          label: 'Has Trample',
+          direction: 'grants',
+          subject: expect.objectContaining({ qualifiers: ['self'] }),
+        }),
+      ]),
+    );
+    expect(amplifier).toMatchObject({
+      label: 'Amplifies +1/+1 Counters',
+      direction: 'listens',
+      event: 'counter-added',
+      subject: {
+        kind: 'creature',
+        controller: 'you',
+        qualifiers: ['self'],
+      },
+      timing: {
+        abilityKind: 'replacement',
+        repeatable: true,
+        multiUsePerTurn: true,
+      },
+    });
+    expect(
+      engineParticipation(
+        buildEngineSignals(effects),
+        'engine:plus-one-counters',
+      ).payoff,
+    ).toBe(true);
+    expect(
+      engineParticipation(buildEngineSignals(effects), 'engine:creature-power')
+        .support,
+    ).toBe(true);
+    expect(
+      engineParticipation(
+        buildEngineSignals(effects),
+        'engine:combat-advantage',
+      ).support,
+    ).toBe(true);
+  });
+
+  it('treats granted vigilance as Combat Advantage support', () => {
+    const effects = effectsFor(
+      'Watchful Training',
+      'Creatures you control gain vigilance until end of turn.',
+      'Instant',
+    );
+    const signals = buildEngineSignals(effects);
+    expect(effects.map((effect) => effect.label)).toContain('Grants Vigilance');
+    expect(
+      engineParticipation(signals, 'engine:combat-advantage').support,
+    ).toBe(true);
+  });
+
+  it('captures Hydroelectric Specimen target redirection as protection', () => {
+    const card = fixtureCard(
+      'Hydroelectric Specimen // Hydroelectric Laboratory',
+      'Flash\nWhen Hydroelectric Specimen enters, you may change the target of target instant or sorcery spell with a single target to Hydroelectric Specimen.',
+      'Creature — Weird // Land',
+    );
+    const effects = extractCardEffects(card);
+    expect(effects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: 'Redirects Spell or Ability',
+          event: 'redirected',
+          direction: 'emits',
+          subject: expect.objectContaining({
+            kind: 'spell',
+            qualifiers: expect.arrayContaining(['single-target']),
+          }),
+        }),
+      ]),
+    );
+    expect(structuredRolesForCard(card, effects)).toContain('Protection');
+  });
+
+  it('captures every persistent output of bundled token replacement effects', () => {
+    const effects = effectsFor(
+      'Academy Manufactor',
+      'If you would create a Clue, Food, or Treasure token, instead create one of each.',
+      'Artifact Creature — Assembly-Worker',
+    );
+    const outputs = effects.filter(
+      (effect) => effect.evidence[0].detectorId === 'token-create',
+    );
+    expect(outputs.map((effect) => effect.label)).toEqual(
+      expect.arrayContaining([
+        'Creates Clue',
+        'Creates Food',
+        'Creates Treasure',
+      ]),
+    );
+    expect(outputs).toHaveLength(3);
+    outputs.forEach((effect) => {
+      expect(effect.timing).toMatchObject({
+        abilityKind: 'replacement',
+        repeatable: true,
+        multiUsePerTurn: true,
+      });
+      expect(effect.quantity).toMatchObject({
+        expected: 1,
+        expression: 'one of each',
+      });
+    });
+  });
+
   it('captures Traveling Botanist tap, land-draw, and graveyard effects', () => {
     const card = fixtureCard(
       'Traveling Botanist',
@@ -89,22 +292,48 @@ describe('corrected named card regressions', () => {
   });
 
   it('Fumulus watches creature sacrifice', () => {
-    const effects = effectsFor('Fumulus, the Infestation', 'Whenever a creature is sacrificed, put a +1/+1 counter on Fumulus.');
-    expect(effects.some((effect) => effect.event === 'sacrificed' && effect.direction === 'listens')).toBe(true);
+    const effects = effectsFor(
+      'Fumulus, the Infestation',
+      'Whenever a creature is sacrificed, put a +1/+1 counter on Fumulus.',
+    );
+    expect(
+      effects.some(
+        (effect) =>
+          effect.event === 'sacrificed' && effect.direction === 'listens',
+      ),
+    ).toBe(true);
   });
 
   it('Blood Artist detects both halves of target-player drain', () => {
-    const effects = effectsFor('Blood Artist', 'Whenever Blood Artist or another creature dies, target player loses 1 life and you gain 1 life.');
-    expect(effects.map((effect) => effect.event)).toEqual(expect.arrayContaining(['dies', 'life-lost', 'life-gained']));
+    const effects = effectsFor(
+      'Blood Artist',
+      'Whenever Blood Artist or another creature dies, target player loses 1 life and you gain 1 life.',
+    );
+    expect(effects.map((effect) => effect.event)).toEqual(
+      expect.arrayContaining(['dies', 'life-lost', 'life-gained']),
+    );
   });
 
   it('Nadier’s Nightblade listens for token LTB', () => {
-    const effects = effectsFor("Nadier's Nightblade", 'Whenever a token you control leaves the battlefield, each opponent loses 1 life.');
-    expect(effects.some((effect) => effect.event === 'leaves-battlefield' && effect.subject.kind === 'token')).toBe(true);
+    const effects = effectsFor(
+      "Nadier's Nightblade",
+      'Whenever a token you control leaves the battlefield, each opponent loses 1 life.',
+    );
+    expect(
+      effects.some(
+        (effect) =>
+          effect.event === 'leaves-battlefield' &&
+          effect.subject.kind === 'token',
+      ),
+    ).toBe(true);
   });
 
   it('Tangletrove Kelp sacrifices an artifact creature and listens to Clue count', () => {
-    const effects = effectsFor('Tangletrove Kelp', 'At the beginning of each combat, other Clues you control become 6/6 Plant creatures.\n{2}{U}, Sacrifice Tangletrove Kelp: Draw a card.', 'Artifact Creature — Clue Plant');
+    const effects = effectsFor(
+      'Tangletrove Kelp',
+      'At the beginning of each combat, other Clues you control become 6/6 Plant creatures.\n{2}{U}, Sacrifice Tangletrove Kelp: Draw a card.',
+      'Artifact Creature — Clue Plant',
+    );
     const signals = buildEngineSignals(effects);
     expect(signals.emits).toContain('artifact-sacrificed');
     expect(signals.emits).toContain('creature-sacrificed');
@@ -151,11 +380,7 @@ describe('corrected named card regressions', () => {
   });
 
   it('does not call a spell ramp merely because it has improvise itself', () => {
-    const card = fixtureCard(
-      'Self-Improvise Spell',
-      'Improvise',
-      'Sorcery',
-    );
+    const card = fixtureCard('Self-Improvise Spell', 'Improvise', 'Sorcery');
     const effects = extractCardEffects(card);
 
     expect(
@@ -201,9 +426,19 @@ describe('corrected named card regressions', () => {
   });
 
   it('Rise and Shine marks Overload as multi-artifact animation', () => {
-    const effects = effectsFor('Rise and Shine', 'Target noncreature artifact you control becomes a 0/0 artifact creature. Overload {4}{U}{U}.', 'Sorcery');
+    const effects = effectsFor(
+      'Rise and Shine',
+      'Target noncreature artifact you control becomes a 0/0 artifact creature. Overload {4}{U}{U}.',
+      'Sorcery',
+    );
     const signals = buildEngineSignals(effects);
-    expect(effects.map((effect) => effect.label)).toContain('Animates Artifact');
+    const animation = effects.find(
+      (effect) => effect.label === 'Animates Artifact',
+    );
+    expect(animation).toMatchObject({
+      quantity: { expected: 3, unbounded: true },
+      conditions: expect.arrayContaining(['target', 'overload']),
+    });
     expect(signals.emits).toContain('artifact-animation-enabled');
     expect(signals.emits).toContain('multi:artifact-animated');
     expect(signals.listens).toContain('animatable-artifact');
@@ -212,7 +447,7 @@ describe('corrected named card regressions', () => {
   it('captures Case of the Filched Falcon as artifact animation', () => {
     const effects = effectsFor(
       'Case of the Filched Falcon',
-      "When this Case enters, investigate.\nTo solve — You control three or more artifacts.\nSolved — {2}{U}, Sacrifice this Case: Put four +1/+1 counters on target noncreature artifact. It becomes a 0/0 Bird creature with flying in addition to its other types.",
+      'When this Case enters, investigate.\nTo solve — You control three or more artifacts.\nSolved — {2}{U}, Sacrifice this Case: Put four +1/+1 counters on target noncreature artifact. It becomes a 0/0 Bird creature with flying in addition to its other types.',
       'Enchantment — Case',
     );
     const animation = effects.find(
@@ -291,19 +526,35 @@ describe('corrected named card regressions', () => {
   });
 
   it('Wilderness Reclamation is repeatable land untap ramp', () => {
-    const effects = effectsFor('Wilderness Reclamation', 'At the beginning of your end step, untap all lands you control.', 'Enchantment');
-    expect(effects.some((effect) => effect.event === 'untapped' && effect.timing.repeatable)).toBe(true);
+    const effects = effectsFor(
+      'Wilderness Reclamation',
+      'At the beginning of your end step, untap all lands you control.',
+      'Enchantment',
+    );
+    expect(
+      effects.some(
+        (effect) => effect.event === 'untapped' && effect.timing.repeatable,
+      ),
+    ).toBe(true);
   });
 
   it('Brood of Cockroaches is delayed recursion without intra-turn repeatability', () => {
-    const effects = effectsFor('Brood of Cockroaches', 'When Brood of Cockroaches is put into your graveyard from the battlefield, at the beginning of the next end step, return Brood of Cockroaches to your hand.');
+    const effects = effectsFor(
+      'Brood of Cockroaches',
+      'When Brood of Cockroaches is put into your graveyard from the battlefield, at the beginning of the next end step, return Brood of Cockroaches to your hand.',
+    );
     const recursion = effects.find((effect) => effect.event === 'returned');
     expect(recursion?.timing.multiUsePerTurn).toBe(false);
   });
 
   it('Gravecrawler can repeatedly cast from the graveyard', () => {
-    const effects = effectsFor('Gravecrawler', 'You may cast Gravecrawler from your graveyard as long as you control a Zombie.');
-    const recursion = effects.find((effect) => effect.sourceZone === 'graveyard');
+    const effects = effectsFor(
+      'Gravecrawler',
+      'You may cast Gravecrawler from your graveyard as long as you control a Zombie.',
+    );
+    const recursion = effects.find(
+      (effect) => effect.sourceZone === 'graveyard',
+    );
     expect(recursion?.label).toBe('Casts from Graveyard');
   });
 
@@ -340,9 +591,7 @@ describe('corrected named card regressions', () => {
     expect(signals.listens).toContain('creature-counter-added');
     expect(signals.emits).toContain('combat-advantage-enabled');
     expect(signals.support).toContain('combat-damage-supported');
-    expect(
-      engineParticipation(signals, 'engine:plus-one-counters'),
-    ).toEqual(
+    expect(engineParticipation(signals, 'engine:plus-one-counters')).toEqual(
       expect.objectContaining({ enabler: true, payoff: true }),
     );
     expect(
@@ -406,9 +655,9 @@ describe('corrected named card regressions', () => {
       timing: { repeatable: true, multiUsePerTurn: false },
     });
     expect(selfRecurringSacrificeCapacity(card)).toBe(9);
-    expect(
-      synergyPreviewRoles(card, 'type-event: creature dies').enabler,
-    ).toBe(true);
+    expect(synergyPreviewRoles(card, 'type-event: creature dies').enabler).toBe(
+      true,
+    );
   });
 
   it('weights Officious Interrogation as a scalable Clue producer', () => {
@@ -429,12 +678,16 @@ describe('corrected named card regressions', () => {
         scalesWithPlayers: true,
       },
     });
-    expect(
-      engineParticipation(
-        buildEngineSignals(investigate ? [investigate] : []),
-        'engine:clue-count',
-      ).enabler,
-    ).toBe(true);
+    const signals = buildEngineSignals(investigate ? [investigate] : []);
+    expect(engineParticipation(signals, 'engine:clue-count').enabler).toBe(
+      true,
+    );
+    expect(engineParticipation(signals, 'engine:sacrifice:clue').support).toBe(
+      true,
+    );
+    expect(engineParticipation(signals, 'engine:clue-animation').support).toBe(
+      true,
+    );
   });
 
   it('captures Forensic Gadgeteer reducing artifact activation costs', () => {
@@ -503,10 +756,7 @@ describe('corrected named card regressions', () => {
     const signals = buildEngineSignals(effects);
 
     expect(effects.map((effect) => effect.label)).toEqual(
-      expect.arrayContaining([
-        'Dog Typal Bonus',
-        'Protects Dogs from Damage',
-      ]),
+      expect.arrayContaining(['Dog Typal Bonus', 'Protects Dogs from Damage']),
     );
     expect(structuredRolesForCard(card, effects)).toContain('Protection');
     expect(signals.emits).toContain('creature-power-increased');
@@ -539,9 +789,9 @@ describe('corrected named card regressions', () => {
     ).not.toContain('Board wipe');
     const signals = buildEngineSignals(effects);
     expect(signals.listens).toContain('creature-count-increased');
-    expect(
-      engineParticipation(signals, 'engine:creature-count').payoff,
-    ).toBe(true);
+    expect(engineParticipation(signals, 'engine:creature-count').payoff).toBe(
+      true,
+    );
   });
 
   it('captures qualified creature targets on the front of Razorgrass Ambush', () => {
@@ -565,18 +815,34 @@ describe('corrected named card regressions', () => {
   });
 
   it('Mushroom Watchdogs is not instant-speed', () => {
-    const effects = effectsFor('Mushroom Watchdogs', '{1}, Sacrifice a Food: Draw a card. Activate only as a sorcery.');
-    expect(effects.find((effect) => effect.event === 'sacrificed')?.timing.instantSpeed).toBe(false);
+    const effects = effectsFor(
+      'Mushroom Watchdogs',
+      '{1}, Sacrifice a Food: Draw a card. Activate only as a sorcery.',
+    );
+    expect(
+      effects.find((effect) => effect.event === 'sacrificed')?.timing
+        .instantSpeed,
+    ).toBe(false);
   });
 
   it('Gingerbread Cabin ignores Food reminder-text sacrifice', () => {
-    const effects = effectsFor('Gingerbread Cabin', 'When Gingerbread Cabin enters, create a Food token. (It’s an artifact with “{2}, {T}, Sacrifice this artifact: You gain 3 life.”)', 'Land — Forest');
+    const effects = effectsFor(
+      'Gingerbread Cabin',
+      'When Gingerbread Cabin enters, create a Food token. (It’s an artifact with “{2}, {T}, Sacrifice this artifact: You gain 3 life.”)',
+      'Land — Forest',
+    );
     expect(effects.some((effect) => effect.event === 'sacrificed')).toBe(false);
   });
 
   it('Swarmyard exposes regeneration as creature protection', () => {
-    const effects = effectsFor('Swarmyard', '{T}: Add {C}.\n{T}: Regenerate target Insect, Rat, Spider, or Squirrel.', 'Land');
-    expect(effects.some((effect) => effect.label === 'Protects Creature')).toBe(true);
+    const effects = effectsFor(
+      'Swarmyard',
+      '{T}: Add {C}.\n{T}: Regenerate target Insect, Rat, Spider, or Squirrel.',
+      'Land',
+    );
+    expect(effects.some((effect) => effect.label === 'Protects Creature')).toBe(
+      true,
+    );
   });
 
   it('Killing Wave resolves “it” to each creature and scales the sacrifice', () => {
@@ -681,10 +947,8 @@ describe('corrected named card regressions', () => {
       'artifact-count-increased',
     );
     expect(
-      engineParticipation(
-        buildEngineSignals(effects),
-        'engine:artifact-count',
-      ).payoff,
+      engineParticipation(buildEngineSignals(effects), 'engine:artifact-count')
+        .payoff,
     ).toBe(true);
   });
 });

@@ -22,11 +22,7 @@ const INTRINSIC_SACRIFICE_TOKEN_TYPES = new Set<NamedTokenType>([
   'treasure',
 ]);
 
-const EMITTING_DIRECTIONS = new Set([
-  'emits',
-  'creates',
-  'transforms',
-]);
+const EMITTING_DIRECTIONS = new Set(['emits', 'creates', 'transforms']);
 
 function subjectNames(effect: CardEffect) {
   const names = new Set<string>();
@@ -46,7 +42,8 @@ function subjectNames(effect: CardEffect) {
   if (
     effect.subject.kind === 'artifact' ||
     effect.subject.qualifiers?.includes('artifact') ||
-    (effect.subject.tokenType && ARTIFACT_TOKEN_TYPES.has(effect.subject.tokenType))
+    (effect.subject.tokenType &&
+      ARTIFACT_TOKEN_TYPES.has(effect.subject.tokenType))
   )
     names.add('artifact');
   if (
@@ -59,12 +56,10 @@ function subjectNames(effect: CardEffect) {
 
 function directSignals(effect: CardEffect) {
   const signals = new Set<string>();
-  effect.subject.creatureTypes?.forEach((type) =>
-    {
-      signals.add(`type:${type}-present`);
-      signals.add(`type:${type}-${effect.event}`);
-    },
-  );
+  effect.subject.creatureTypes?.forEach((type) => {
+    signals.add(`type:${type}-present`);
+    signals.add(`type:${type}-${effect.event}`);
+  });
   const detectorId = effect.evidence[0]?.detectorId ?? '';
   const isTypalMetadata = detectorId.startsWith('typal-');
   if (effect.event === 'investigated') {
@@ -90,7 +85,13 @@ function directSignals(effect: CardEffect) {
     signals.add('permanent-created');
     signals.add('token-created');
   }
-  if (['counter-placement', 'outlast-counter-placement', 'creature-anthem'].includes(detectorId))
+  if (
+    [
+      'counter-placement',
+      'outlast-counter-placement',
+      'creature-anthem',
+    ].includes(detectorId)
+  )
     signals.add('creature-power-increased');
   if (detectorId === 'creature-power-threshold')
     signals.add('creature-count-increased');
@@ -187,7 +188,11 @@ function impliedSignals(signal: string) {
   if (signal === 'card-discarded' || signal === 'card-milled')
     implied.add('graveyard-stocked');
   if (signal === 'card-surveilled') implied.add('graveyard-stocked');
-  if (signal === 'clue-created' || signal === 'food-created' || signal === 'treasure-created') {
+  if (
+    signal === 'clue-created' ||
+    signal === 'food-created' ||
+    signal === 'treasure-created'
+  ) {
     implied.add('artifact-created');
     implied.add('token-created');
   }
@@ -234,18 +239,24 @@ export function buildEngineSignals(effects: CardEffect[]): EngineSignals {
     const detectorId = effect.evidence[0]?.detectorId ?? '';
     const paragraphText = effect.evidence[0]?.paragraphText ?? '';
     // Landfall and other Land ETB payoffs are enabled by effects that create
-    // additional land entries, even when the printed action is "play" or
-    // "search" rather than literally "put ... onto the battlefield."
+    // additional land entries. A land tutored only to hand is useful setup,
+    // but it does not create an additional entry by itself.
     if (
       detectorId === 'additional-land-play' ||
-      (detectorId === 'tutor' && /\bland(?: card)?\b/.test(paragraphText)) ||
-      (detectorId === 'top-library-play' && /\bplay lands?\b/.test(paragraphText)) ||
+      (detectorId === 'top-library-play' &&
+        /\bplay lands?\b/.test(paragraphText)) ||
       (effect.destinationZone === 'battlefield' &&
-        (effect.subject.kind === 'land' || /\bland(?: card)?\b/.test(paragraphText)))
+        (effect.subject.kind === 'land' ||
+          /\bland(?: card)?\b/.test(paragraphText)))
     )
       emittedSeeds.add('land-enters-battlefield');
-    if (detectorId === 'self-etb-event')
-      listens.add('self-etb-triggered');
+    if (
+      detectorId === 'tutor' &&
+      effect.subject.kind === 'land' &&
+      effect.destinationZone === 'hand'
+    )
+      support.add('land-etb-supported');
+    if (detectorId === 'self-etb-event') listens.add('self-etb-triggered');
     if (detectorId === 'gravestorm') {
       // Gravestorm counts every permanent put into a graveyard from the
       // battlefield. Creature death is the typed engine currently exposed in
@@ -261,9 +272,7 @@ export function buildEngineSignals(effects: CardEffect[]): EngineSignals {
     ) {
       signals.forEach((signal) => {
         if (signal.endsWith('-enters-battlefield'))
-          listens.add(
-            signal.replace(/-enters-battlefield$/, '-etb-triggered'),
-          );
+          listens.add(signal.replace(/-enters-battlefield$/, '-etb-triggered'));
       });
     }
     if (
@@ -308,6 +317,15 @@ export function buildEngineSignals(effects: CardEffect[]): EngineSignals {
       /\bfirst strike\b/.test(effect.evidence[0]?.matchedText ?? '')
     )
       support.add('combat-damage-supported');
+    if (detectorId === 'self-trample') support.add('creature-power-supported');
+    if (
+      detectorId === 'self-vigilance' ||
+      (['keyword-grant', 'counter-conditional-keyword-grant'].includes(
+        detectorId,
+      ) &&
+        /\bvigilance\b/.test(effect.evidence[0]?.matchedText ?? ''))
+    )
+      support.add('combat-advantage-supported');
     if (
       (['keyword-grant', 'counter-conditional-keyword-grant'].includes(
         detectorId,
@@ -322,8 +340,9 @@ export function buildEngineSignals(effects: CardEffect[]): EngineSignals {
         /[+-]\d+\/[+-]\d+|\b(?:power|toughness)\b/.test(paragraphText))
     )
       emittedSeeds.add('combat-advantage-enabled');
-    if (detectorId === 'attack-event')
-      listens.add('combat-advantage-enabled');
+    if (detectorId === 'opposing-power-reduction')
+      emittedSeeds.add('combat-advantage-enabled');
+    if (detectorId === 'attack-event') listens.add('combat-advantage-enabled');
     if (detectorId === 'combat-damage-event')
       listens.add('combat-advantage-enabled');
     if (detectorId === 'spell-copy') {
@@ -332,9 +351,7 @@ export function buildEngineSignals(effects: CardEffect[]): EngineSignals {
         effect.subject.kind === 'creature' ||
         /\bcreature spell\b/.test(spellCopyText);
       emittedSeeds.add(
-        creatureSpecific
-          ? 'creature-spell-copy-enabled'
-          : 'spell-copy-enabled',
+        creatureSpecific ? 'creature-spell-copy-enabled' : 'spell-copy-enabled',
       );
       if (
         !creatureSpecific &&
@@ -346,18 +363,18 @@ export function buildEngineSignals(effects: CardEffect[]): EngineSignals {
         emittedSeeds.add('creature-spell-copy-compatible');
       if (creatureSpecific) {
         listens.add(
-          /\bnonlegendary creature spell\b/.test(
-            spellCopyText,
-          )
+          /\bnonlegendary creature spell\b/.test(spellCopyText)
             ? 'copyable-nonlegendary-creature-spell-cast'
             : 'copyable-creature-spell-cast',
         );
       } else listens.add('copyable-spell-cast');
     }
     if (
-      ['creature-token-copy', 'creature-enters-as-copy', 'creature-becomes-copy'].includes(
-        detectorId,
-      )
+      [
+        'creature-token-copy',
+        'creature-enters-as-copy',
+        'creature-becomes-copy',
+      ].includes(detectorId)
     )
       listens.add('copyable-creature');
     if (
@@ -389,8 +406,7 @@ export function buildEngineSignals(effects: CardEffect[]): EngineSignals {
     if (emits.has(`${type}-created`))
       support.add(`${type}-sacrifice-supported`);
   });
-  if (emits.has('clue-created'))
-    support.add('clue-animation-supported');
+  if (emits.has('clue-created')) support.add('clue-animation-supported');
   return { emits, listens, eligible, support };
 }
 

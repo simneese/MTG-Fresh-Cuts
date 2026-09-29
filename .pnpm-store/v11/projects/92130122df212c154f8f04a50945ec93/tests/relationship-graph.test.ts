@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { extractCardEffects } from '../src/synergy-engine/extract-effects';
-import { buildEngineSignals, signalPathsBetween } from '../src/synergy-engine/relationship-graph';
+import {
+  buildEngineSignals,
+  signalPathsBetween,
+} from '../src/synergy-engine/relationship-graph';
 import {
   dedupeEngineFamilies,
   engineSpecializationIsAvailable,
@@ -20,28 +23,35 @@ describe('relationship graph implications', () => {
     const producer = signals('Sacrifice a creature: Draw a card.');
     expect(producer.emits).toContain('creature-dies');
     expect(producer.emits).toContain('creature-leaves-battlefield');
-    expect(signalPathsBetween(producer, signals('Whenever a creature dies, draw a card.'))).toContain('creature-dies');
+    expect(
+      signalPathsBetween(
+        producer,
+        signals('Whenever a creature dies, draw a card.'),
+      ),
+    ).toContain('creature-dies');
   });
 
   it('treats Gravestorm as a creature-death payoff', () => {
     const result = signals('Gravestorm');
 
     expect(result.listens).toContain('creature-dies');
-    expect(
-      engineParticipation(result, 'engine:death').payoff,
-    ).toBe(true);
+    expect(engineParticipation(result, 'engine:death').payoff).toBe(true);
     expect(result.listens).not.toContain('creature-exiled');
     expect(result.listens).not.toContain('creature-leaves-battlefield');
   });
 
   it('connects investigate to Clue, artifact, and token creation', () => {
     const result = signals('Investigate.');
-    expect(result.emits).toEqual(expect.objectContaining(new Set([
-      'investigated',
-      'clue-created',
-      'artifact-created',
-      'token-created',
-    ])));
+    expect(result.emits).toEqual(
+      expect.objectContaining(
+        new Set([
+          'investigated',
+          'clue-created',
+          'artifact-created',
+          'token-created',
+        ]),
+      ),
+    );
   });
 
   it('does not translate exile into dies', () => {
@@ -67,9 +77,7 @@ describe('relationship graph implications', () => {
     const broadPayoff = signals(
       'Whenever another creature enters the battlefield under your control, you gain 1 life.',
     );
-    const selfEtbPayoff = signals(
-      'When this creature enters, draw a card.',
-    );
+    const selfEtbPayoff = signals('When this creature enters, draw a card.');
 
     expect(
       engineParticipation(reanimation, 'engine:enters-battlefield'),
@@ -139,7 +147,10 @@ describe('relationship graph implications', () => {
       engineParticipation(landTrigger, 'engine:enters-battlefield:creature'),
     ).toMatchObject({ payoff: false });
     expect(
-      engineParticipation(creatureTrigger, 'engine:enters-battlefield:creature'),
+      engineParticipation(
+        creatureTrigger,
+        'engine:enters-battlefield:creature',
+      ),
     ).toMatchObject({ payoff: true });
     expect(
       engineParticipation(creatureTrigger, 'engine:enters-battlefield:land'),
@@ -199,26 +210,38 @@ describe('relationship graph implications', () => {
     );
     expect(result.listens).toContain('creature-cast');
     expect(result.listens).not.toContain('copyable-spell-cast');
-    expect(result.listens).toContain('copyable-nonlegendary-creature-spell-cast');
+    expect(result.listens).toContain(
+      'copyable-nonlegendary-creature-spell-cast',
+    );
     expect(result.listens).not.toContain('copyable-creature');
     expect(result.emits).toContain('spell-copied');
     expect(result.emits).toContain('creature-created');
     expect(result.emits).toContain('token-created');
-    expect(
-      engineParticipation(result, 'engine:spell-copy'),
-    ).toEqual({ enabler: false, payoff: false, eligible: false, support: false });
+    expect(engineParticipation(result, 'engine:spell-copy')).toEqual({
+      enabler: false,
+      payoff: false,
+      eligible: false,
+      support: false,
+    });
     expect(
       engineParticipation(result, 'engine:creature-spell-copy'),
     ).toMatchObject({ enabler: true, payoff: true });
-    expect(
-      engineParticipation(result, 'engine:creature-copy'),
-    ).toEqual({ enabler: false, payoff: false, eligible: false, support: false });
+    expect(engineParticipation(result, 'engine:creature-copy')).toEqual({
+      enabler: false,
+      payoff: false,
+      eligible: false,
+      support: false,
+    });
     expect(result.emits).not.toContain('creature-cast');
   });
 
   it('only gives token output to creature-copy effects that create tokens', () => {
-    const tokenCopy = signals('Create a creature token that is a copy of target creature.');
-    const transformedCopy = signals('Target creature becomes a copy of another creature.');
+    const tokenCopy = signals(
+      'Create a creature token that is a copy of target creature.',
+    );
+    const transformedCopy = signals(
+      'Target creature becomes a copy of another creature.',
+    );
     expect(tokenCopy.emits).toContain('token-created');
     expect(tokenCopy.emits).toContain('creature-created');
     expect(transformedCopy.emits).toContain('creature-copied');
@@ -228,10 +251,7 @@ describe('relationship graph implications', () => {
 
   it('prefers the specific creature-spell-copy theme over broad spell copy', () => {
     expect(
-      dedupeEngineFamilies([
-        'engine:spell-copy',
-        'engine:creature-spell-copy',
-      ]),
+      dedupeEngineFamilies(['engine:spell-copy', 'engine:creature-spell-copy']),
     ).toEqual(['engine:creature-spell-copy']);
   });
 
@@ -295,15 +315,18 @@ describe('relationship graph implications', () => {
           scalesWithPlayers: false,
         },
         conditions: [],
-        evidence: [{
-          detectorId: 'scoped-exile-reference',
-          paragraphIndex: 0,
-          paragraphText: 'this artifact has the activated abilities of cards exiled by this artifact.',
-          matchedText: 'cards exiled by this artifact',
-          start: 0,
-          end: 31,
-          inferred: false,
-        }],
+        evidence: [
+          {
+            detectorId: 'scoped-exile-reference',
+            paragraphIndex: 0,
+            paragraphText:
+              'this artifact has the activated abilities of cards exiled by this artifact.',
+            matchedText: 'cards exiled by this artifact',
+            start: 0,
+            end: 31,
+            inferred: false,
+          },
+        ],
       },
     ]);
     expect(scoped.listens).not.toContain('card-exiled');
@@ -329,16 +352,26 @@ describe('relationship graph implications', () => {
     const destroyed = signals('Destroy target creature.');
     const exiled = signals('Exile target creature.');
 
-    expect(engineParticipation(sacrificed, 'engine:sacrifice:creature').enabler).toBe(true);
+    expect(
+      engineParticipation(sacrificed, 'engine:sacrifice:creature').enabler,
+    ).toBe(true);
     expect(engineParticipation(sacrificed, 'engine:death').enabler).toBe(true);
-    expect(engineParticipation(sacrificed, 'engine:leaves-battlefield').enabler).toBe(true);
-    expect(engineParticipation(destroyed, 'engine:sacrifice').enabler).toBe(false);
+    expect(
+      engineParticipation(sacrificed, 'engine:leaves-battlefield').enabler,
+    ).toBe(true);
+    expect(engineParticipation(destroyed, 'engine:sacrifice').enabler).toBe(
+      false,
+    );
     expect(engineParticipation(destroyed, 'engine:death').enabler).toBe(true);
-    expect(engineParticipation(destroyed, 'engine:leaves-battlefield').enabler).toBe(true);
+    expect(
+      engineParticipation(destroyed, 'engine:leaves-battlefield').enabler,
+    ).toBe(true);
     expect(engineParticipation(exiled, 'engine:sacrifice').enabler).toBe(false);
     expect(engineParticipation(exiled, 'engine:death').enabler).toBe(false);
     expect(engineParticipation(exiled, 'engine:exile').enabler).toBe(true);
-    expect(engineParticipation(exiled, 'engine:leaves-battlefield').enabler).toBe(true);
+    expect(
+      engineParticipation(exiled, 'engine:leaves-battlefield').enabler,
+    ).toBe(true);
   });
 
   it('keeps permanent, card-type, and subtype sacrifice themes together', () => {
@@ -360,18 +393,23 @@ describe('relationship graph implications', () => {
   it('does not broaden a Clue-sacrifice listener into other sacrifice or LTB events', () => {
     const result = signals('Whenever you sacrifice a Clue, draw a card.');
     expect(result.listens).toEqual(new Set(['clue-sacrificed']));
-    expect(engineParticipation(result, 'engine:sacrifice:clue').payoff).toBe(true);
-    expect(engineParticipation(result, 'engine:sacrifice:creature').payoff).toBe(false);
-    expect(engineParticipation(result, 'engine:sacrifice:artifact').payoff).toBe(false);
-    expect(engineParticipation(result, 'engine:leaves-battlefield').payoff).toBe(false);
+    expect(engineParticipation(result, 'engine:sacrifice:clue').payoff).toBe(
+      true,
+    );
+    expect(
+      engineParticipation(result, 'engine:sacrifice:creature').payoff,
+    ).toBe(false);
+    expect(
+      engineParticipation(result, 'engine:sacrifice:artifact').payoff,
+    ).toBe(false);
+    expect(
+      engineParticipation(result, 'engine:leaves-battlefield').payoff,
+    ).toBe(false);
   });
 
   it('classifies Clue production as indirect Clue-sacrifice support', () => {
     const result = signals('Investigate twice.');
-    const participation = engineParticipation(
-      result,
-      'engine:sacrifice:clue',
-    );
+    const participation = engineParticipation(result, 'engine:sacrifice:clue');
     expect(result.support).toContain('clue-sacrifice-supported');
     expect(participation.support).toBe(true);
     expect(participation.enabler).toBe(false);
@@ -393,17 +431,12 @@ describe('relationship graph implications', () => {
     );
     const leavesOnly = signals('Sacrifice a creature: Draw a card.');
 
+    expect(engineIsActive([leavesOnly], 'engine:leaves-battlefield')).toBe(
+      false,
+    );
+    expect(engineIsActive([cluePayoff], 'engine:sacrifice:clue')).toBe(false);
     expect(
-      engineIsActive([leavesOnly], 'engine:leaves-battlefield'),
-    ).toBe(false);
-    expect(
-      engineIsActive([cluePayoff], 'engine:sacrifice:clue'),
-    ).toBe(false);
-    expect(
-      engineIsActive(
-        [clueProducer, cluePayoff],
-        'engine:sacrifice:clue',
-      ),
+      engineIsActive([clueProducer, cluePayoff], 'engine:sacrifice:clue'),
     ).toBe(true);
   });
 
@@ -415,10 +448,8 @@ describe('relationship graph implications', () => {
     landParticipant.eligible.add('land-enters-battlefield');
 
     expect(
-      engineParticipation(
-        landfallPayoff,
-        'engine:enters-battlefield:land',
-      ).payoff,
+      engineParticipation(landfallPayoff, 'engine:enters-battlefield:land')
+        .payoff,
     ).toBe(true);
     expect(
       engineIsActive(
@@ -439,15 +470,17 @@ describe('relationship graph implications', () => {
       'Search your library for a basic land card, reveal it, put it into your hand, then shuffle.',
     );
 
-    [additionalPlay, landFetch, landToHand].forEach((result) => {
+    [additionalPlay, landFetch].forEach((result) => {
       expect(result.emits).toContain('land-enters-battlefield');
       expect(
-        engineParticipation(
-          result,
-          'engine:enters-battlefield:land',
-        ).enabler,
+        engineParticipation(result, 'engine:enters-battlefield:land').enabler,
       ).toBe(true);
     });
+    expect(landToHand.emits).not.toContain('land-enters-battlefield');
+    expect(landToHand.support).toContain('land-etb-supported');
+    expect(
+      engineParticipation(landToHand, 'engine:enters-battlefield:land').support,
+    ).toBe(true);
   });
 
   it('connects combat-access effects to combat-damage payoffs', () => {
@@ -458,14 +491,16 @@ describe('relationship graph implications', () => {
       'Whenever this creature deals combat damage to a player, draw a card.',
     );
     expect(evasion.emits).toContain('combat-damage-enabled');
-    expect(
-      engineParticipation(evasion, 'engine:combat-damage').enabler,
-    ).toBe(true);
-    expect(
-      engineParticipation(payoff, 'engine:combat-damage').payoff,
-    ).toBe(true);
+    expect(engineParticipation(evasion, 'engine:combat-damage').enabler).toBe(
+      true,
+    );
+    expect(engineParticipation(payoff, 'engine:combat-damage').payoff).toBe(
+      true,
+    );
     expect(engineIsActive([evasion], 'engine:combat-damage')).toBe(false);
-    expect(engineIsActive([evasion, payoff], 'engine:combat-damage')).toBe(true);
+    expect(engineIsActive([evasion, payoff], 'engine:combat-damage')).toBe(
+      true,
+    );
   });
 
   it('treats granted first strike as Combat Damage support, not an enabler', () => {
@@ -473,9 +508,7 @@ describe('relationship graph implications', () => {
       'Target creature gains first strike until end of turn.',
     );
     expect(firstStrike.support).toContain('combat-damage-supported');
-    expect(
-      engineParticipation(firstStrike, 'engine:combat-damage'),
-    ).toEqual({
+    expect(engineParticipation(firstStrike, 'engine:combat-damage')).toEqual({
       enabler: false,
       payoff: false,
       eligible: false,
@@ -497,10 +530,7 @@ describe('relationship graph implications', () => {
       engineParticipation(attackPayoff, 'engine:combat-advantage').payoff,
     ).toBe(true);
     expect(
-      engineIsActive(
-        [firstStrike, attackPayoff],
-        'engine:combat-advantage',
-      ),
+      engineIsActive([firstStrike, attackPayoff], 'engine:combat-advantage'),
     ).toBe(true);
   });
 });

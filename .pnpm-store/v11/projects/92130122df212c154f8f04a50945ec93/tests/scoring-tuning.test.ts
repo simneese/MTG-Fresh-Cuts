@@ -4,6 +4,7 @@ import {
   engineSideBalance,
   lowSynergyScore,
   manualThemeProtectionRate,
+  protectedOverallCutScore,
 } from '../src/synergy-engine/scoring';
 
 describe('deck-level scoring outcomes', () => {
@@ -64,5 +65,26 @@ describe('deck-level scoring outcomes', () => {
     expect(manualThemeProtectionRate(2)).toBe(0.4);
     expect(manualThemeProtectionRate(3)).toBe(0.5);
     expect(manualThemeProtectionRate(8)).toBe(0.5);
+  });
+
+  it('protects a confirmed commander-fed payoff over a generic flexible card', () => {
+    const tangletroveKelp = protectedOverallCutScore({
+      curve: 0.46,
+      synergyBeforeProtections: 0.14 / 0.75,
+      price: 0,
+      popularity: 0.48,
+      priceIsActive: false,
+      standardProtectionRate: 0.25,
+    }).score;
+    const seaGateRestoration = protectedOverallCutScore({
+      curve: 0.46,
+      synergyBeforeProtections: 0.14,
+      price: 0,
+      popularity: 0.45,
+      priceIsActive: false,
+      standardProtectionRate: 0,
+    }).score;
+
+    expect(seaGateRestoration - tangletroveKelp).toBeGreaterThanOrEqual(0.05);
   });
 });

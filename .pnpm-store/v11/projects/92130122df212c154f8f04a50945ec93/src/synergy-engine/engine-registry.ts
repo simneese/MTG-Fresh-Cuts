@@ -90,17 +90,21 @@ const definitions: EngineDefinition[] = [
     ['enchantment', 'Enchantment'],
     ['land', 'Land'],
     ['token', 'Token'],
-  ].map(([type, label]) => ({
-    id: `engine:enters-battlefield:${type}`,
-    label: `${label} Enters the Battlefield`,
-    desiredEnablersPerPayoff: 3,
-    legacyTags: [],
-    enablerSignals: [`${type}-enters-battlefield`],
-    payoffSignals: [`${type}-etb-triggered`],
-    eligibilitySignals: [`${type}-enters-battlefield`],
-    parentEngineIds: ['engine:enters-battlefield'],
-    allowParentCoexistence: true,
-  } satisfies EngineDefinition)),
+  ].map(
+    ([type, label]) =>
+      ({
+        id: `engine:enters-battlefield:${type}`,
+        label: `${label} Enters the Battlefield`,
+        desiredEnablersPerPayoff: 3,
+        legacyTags: [],
+        enablerSignals: [`${type}-enters-battlefield`],
+        payoffSignals: [`${type}-etb-triggered`],
+        eligibilitySignals: [`${type}-enters-battlefield`],
+        supportSignals: type === 'land' ? ['land-etb-supported'] : undefined,
+        parentEngineIds: ['engine:enters-battlefield'],
+        allowParentCoexistence: true,
+      }) satisfies EngineDefinition,
+  ),
   ...[
     'blood',
     'clue',
@@ -110,25 +114,28 @@ const definitions: EngineDefinition[] = [
     'map',
     'powerstone',
     'treasure',
-  ].map((type) => ({
-    id: `engine:enters-battlefield:${type}`,
-    label: `${type.replace(/\b\w/g, (letter) => letter.toUpperCase())} Enters the Battlefield`,
-    desiredEnablersPerPayoff: 3,
-    legacyTags: [],
-    enablerSignals: [`${type}-enters-battlefield`],
-    payoffSignals: [`${type}-etb-triggered`],
-    eligibilitySignals: [`${type}-enters-battlefield`],
-    specializationPayoffSignals: [
-      'artifact-etb-triggered',
-      'token-etb-triggered',
-    ],
-    parentEngineIds: [
-      'engine:enters-battlefield:artifact',
-      'engine:enters-battlefield:token',
-      'engine:enters-battlefield',
-    ],
-    allowParentCoexistence: true,
-  } satisfies EngineDefinition)),
+  ].map(
+    (type) =>
+      ({
+        id: `engine:enters-battlefield:${type}`,
+        label: `${type.replace(/\b\w/g, (letter) => letter.toUpperCase())} Enters the Battlefield`,
+        desiredEnablersPerPayoff: 3,
+        legacyTags: [],
+        enablerSignals: [`${type}-enters-battlefield`],
+        payoffSignals: [`${type}-etb-triggered`],
+        eligibilitySignals: [`${type}-enters-battlefield`],
+        specializationPayoffSignals: [
+          'artifact-etb-triggered',
+          'token-etb-triggered',
+        ],
+        parentEngineIds: [
+          'engine:enters-battlefield:artifact',
+          'engine:enters-battlefield:token',
+          'engine:enters-battlefield',
+        ],
+        allowParentCoexistence: true,
+      }) satisfies EngineDefinition,
+  ),
   {
     id: 'engine:self-enters-battlefield',
     label: 'Self ETB',
@@ -218,6 +225,7 @@ const definitions: EngineDefinition[] = [
     legacyTags: [],
     enablerSignals: ['creature-power-increased'],
     payoffSignals: ['creature-power-increased'],
+    supportSignals: ['creature-power-supported'],
   },
   {
     id: 'engine:combat-damage',
@@ -235,6 +243,7 @@ const definitions: EngineDefinition[] = [
     legacyTags: [],
     enablerSignals: ['combat-advantage-enabled'],
     payoffSignals: ['combat-advantage-enabled'],
+    supportSignals: ['combat-advantage-supported'],
   },
   {
     id: 'engine:plus-one-counters',
@@ -470,10 +479,7 @@ export function engineFamilyForLegacyTag(tag: string) {
   return definition?.id ?? `engine:theme:${normalized}`;
 }
 
-export function engineParticipation(
-  signals: EngineSignals,
-  engineId: string,
-) {
+export function engineParticipation(signals: EngineSignals, engineId: string) {
   const definition = engineDefinitionForId(engineId);
   if (!definition)
     return { enabler: false, payoff: false, eligible: false, support: false };
@@ -509,7 +515,7 @@ export function engineSpecializationRoles(
   return {
     enabler: Boolean(
       definition?.specializationEnablerSignals?.some((pattern) =>
-      [...signals.emits].some((signal) => matchesSignal(pattern, signal)),
+        [...signals.emits].some((signal) => matchesSignal(pattern, signal)),
       ),
     ),
     payoff: Boolean(
@@ -527,7 +533,7 @@ export function engineSpecializationIsAvailable(
   const definition = engineDefinitionForId(engineId);
   return Boolean(
     definition?.allowParentCoexistence ||
-      definition?.parentEngineIds?.some(parentIsIgnored),
+    definition?.parentEngineIds?.some(parentIsIgnored),
   );
 }
 
@@ -546,9 +552,7 @@ export function engineIsActive(
     hasSupport ||= participation.support;
     hasEligibleParticipant ||= participation.eligible;
   }
-  return (
-    hasPayoff && (hasEnabler || hasSupport || hasEligibleParticipant)
-  );
+  return hasPayoff && (hasEnabler || hasSupport || hasEligibleParticipant);
 }
 
 export function engineDefinitions() {
@@ -556,7 +560,9 @@ export function engineDefinitions() {
     ...definitions,
     ...COMMON_SACRIFICE_TYPES.map((type) =>
       engineDefinitionForId(`engine:sacrifice:${type}`),
-    ).filter((definition): definition is EngineDefinition => Boolean(definition)),
+    ).filter((definition): definition is EngineDefinition =>
+      Boolean(definition),
+    ),
   ];
 }
 

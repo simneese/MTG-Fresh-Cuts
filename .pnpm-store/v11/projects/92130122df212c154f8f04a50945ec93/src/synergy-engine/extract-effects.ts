@@ -65,7 +65,13 @@ export function oracleParagraphs(card: EffectCard): OracleParagraph[] {
   return text.split(/\n+/).flatMap((raw, index) => {
     const paragraph = raw.trim();
     const result = paragraph
-      ? [{ index, text: paragraph, sourceStart: sourceStart + raw.indexOf(paragraph) }]
+      ? [
+          {
+            index,
+            text: paragraph,
+            sourceStart: sourceStart + raw.indexOf(paragraph),
+          },
+        ]
       : [];
     sourceStart += raw.length + 1;
     return result;
@@ -83,17 +89,12 @@ function abilityKind(card: EffectCard, paragraph: string): EffectAbilityKind {
   return 'static';
 }
 
-function timingScopeForMatch(
-  paragraph: string,
-  start: number,
-  length: number,
-) {
+function timingScopeForMatch(paragraph: string, start: number, length: number) {
   const quotePattern = /[“"]([^”"]*)[”"]/g;
   for (const quote of paragraph.matchAll(quotePattern)) {
     const quoteStart = quote.index ?? -1;
     const quoteEnd = quoteStart + quote[0].length;
-    if (start >= quoteStart && start + length <= quoteEnd)
-      return quote[1];
+    if (start >= quoteStart && start + length <= quoteEnd) return quote[1];
   }
   // Restrictions inside a granted/quoted ability belong to that ability and
   // must not change the timing of the surrounding effect.
@@ -106,7 +107,8 @@ function timingFor(card: EffectCard, paragraph: string): EffectTiming {
   const requiresTap =
     /^\s*[^:]*\{t\}[^:]*:/.test(paragraph) || /^outlast\b/.test(paragraph);
   const sorcerySpeedOnly =
-    /\bactivate only as a sorcery\b/.test(paragraph) || /^outlast\b/.test(paragraph);
+    /\bactivate only as a sorcery\b/.test(paragraph) ||
+    /^outlast\b/.test(paragraph);
   const delayedOneShot = /\bat the beginning of the next\b/.test(paragraph);
   const recurringTrigger =
     kind === 'triggered' &&
@@ -119,7 +121,12 @@ function timingFor(card: EffectCard, paragraph: string): EffectTiming {
     !/\bsacrifice (?:this (?:permanent|card|creature|artifact|land)|it)\b/.test(
       paragraph.split(':')[0] ?? '',
     );
-  const repeatable = recurringTrigger || activatedRepeatable;
+  // Replacement effects such as Academy Manufactor's apply every time their
+  // event occurs. Treat them as persistent/repeatable rather than as a
+  // one-shot static sentence, while still respecting explicit turn limits.
+  const persistentReplacement = kind === 'replacement' && !oncePerTurn;
+  const repeatable =
+    recurringTrigger || activatedRepeatable || persistentReplacement;
   return {
     abilityKind: kind,
     repeatable,
@@ -133,21 +140,20 @@ function timingFor(card: EffectCard, paragraph: string): EffectTiming {
 }
 
 function quantityFrom(text: string): EffectQuantity {
-  const value = text.match(
-    /\b(a|an|one|two|three|four|five|six|\d+)\b/,
-  )?.[1];
-  const unbounded = /\b(?:any number of|for each|that many|that much|x|equal to (?:the )?number of)\b/.test(
-    text,
-  );
+  const value = text.match(/\b(a|an|one|two|three|four|five|six|\d+)\b/)?.[1];
+  const unbounded =
+    /\b(?:any number of|for each|that many|that much|x|equal to (?:the )?number of)\b/.test(
+      text,
+    );
   const expected = unbounded
     ? 4
     : /\bone or more\b/.test(text)
       ? 3
-    : /\ball\b/.test(text)
-      ? 4
-      : value
-        ? (NUMBER_WORDS[value] ?? Number(value))
-        : 1;
+      : /\ball\b/.test(text)
+        ? 4
+        : value
+          ? (NUMBER_WORDS[value] ?? Number(value))
+          : 1;
   const scalesWithPlayers = /\beach (?:player|opponent)\b/.test(text);
   return {
     minimum: /\bup to\b/.test(text) || unbounded ? 0 : 1,
@@ -206,7 +212,7 @@ function subjectFrom(text: string, card?: EffectCard): EffectSubject {
     kind !== 'artifact' && /\bartifacts?\b/.test(text) ? 'artifact' : '',
   ].filter(Boolean);
   const selfTypeLine = selfReference
-    ? card?.cardData?.typeLine?.toLowerCase() ?? ''
+    ? (card?.cardData?.typeLine?.toLowerCase() ?? '')
     : '';
   const selfNamedTokenType = selfReference
     ? NAMED_TOKENS.find((type) =>
@@ -240,9 +246,7 @@ function addMatches(
   pattern: RegExp,
   config: {
     label: string | ((match: RegExpMatchArray) => string);
-    direction:
-      | EffectDirection
-      | ((match: RegExpMatchArray) => EffectDirection);
+    direction: EffectDirection | ((match: RegExpMatchArray) => EffectDirection);
     event: EffectEvent | ((match: RegExpMatchArray) => EffectEvent);
     subject?: (match: RegExpMatchArray) => EffectSubject;
     sourceZone?: CardEffect['sourceZone'];
@@ -265,6 +269,18 @@ function addMatches(
       quantity.scalesWithPlayers = true;
       quantity.expected *= 3;
     }
+    const hasTarget = /\btarget\b/.test(matchedText);
+    const hasOverload =
+      card.cardData?.keywords?.some(
+        (keyword) => keyword.toLowerCase() === 'overload',
+      ) || /\boverload\b/.test(oracleTextWithoutReminderText(card));
+    if (hasTarget && hasOverload) {
+      // Overload replaces every instance of "target" with "each". The exact
+      // board size is unknown, so use the shared multi-object baseline while
+      // retaining the fact that the effect is unbounded.
+      quantity.expected = Math.max(quantity.expected, 3);
+      quantity.unbounded = true;
+    }
     effects.push({
       id: `${card.key ?? card.name}:${paragraph.index}:${detectorId}:${effects.length}`,
       label:
@@ -274,9 +290,7 @@ function addMatches(
           ? config.direction(match)
           : config.direction,
       event:
-        typeof config.event === 'function'
-          ? config.event(match)
-          : config.event,
+        typeof config.event === 'function' ? config.event(match) : config.event,
       subject: config.subject?.(match) ?? subjectFrom(matchedText, card),
       sourceZone: config.sourceZone,
       destinationZone: config.destinationZone,
@@ -290,12 +304,8 @@ function addMatches(
       ),
       quantity,
       conditions: [
-        /\btarget\b/.test(matchedText) ? 'target' : '',
-        card.cardData?.keywords?.some(
-          (keyword) => keyword.toLowerCase() === 'overload',
-        ) || /\boverload\b/.test(oracleTextWithoutReminderText(card))
-          ? 'overload'
-          : '',
+        hasTarget ? 'target' : '',
+        hasOverload ? 'overload' : '',
         /\bonly once (?:each|per) turn\b/.test(paragraph.text)
           ? 'once-per-turn'
           : '',
@@ -345,10 +355,7 @@ function isTriggeredCastMatch(
   return /\b(?:when|whenever|if)\b/.test(throughCast);
 }
 
-function usesChosenCreatureType(
-  card: EffectCard,
-  paragraphText: string,
-) {
+function usesChosenCreatureType(card: EffectCard, paragraphText: string) {
   const fullText = oracleTextWithoutReminderText(card);
   return (
     /\bchoose a creature type\b/.test(fullText) &&
@@ -377,6 +384,8 @@ function cardDataVersion(card: EffectCard) {
 function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
   const effects: CardEffect[] = [];
   for (const paragraph of oracleParagraphs(card)) {
+    const tokenCreationStart = effects.length;
+    const tutorStart = effects.length;
     addMatches(
       effects,
       card,
@@ -387,7 +396,11 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
         label: 'Enters-the-Battlefield Trigger',
         direction: 'listens',
         event: 'enters-battlefield',
-        subject: () => ({ kind: 'permanent', controller: 'you', qualifiers: ['self'] }),
+        subject: () => ({
+          kind: 'permanent',
+          controller: 'you',
+          qualifiers: ['self'],
+        }),
       },
     );
     addMatches(
@@ -413,12 +426,12 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
       /\b(?:each [^.\n]*|[^.\n]*?)deals? (?:(?:\d+|x|that much) damage|damage equal to [^.\n]+?) to (?:target|that|another) (?:(?:attacking|blocking|tapped|untapped) (?:or )?)*(?:creature|planeswalker)\b[^.\n]*/g,
       {
         label: (match) => {
-          const targetsCreature = /\btarget creature\b|\bcreature or planeswalker\b/.test(
-            match[0],
-          );
-          const targetsPlaneswalker = /\btarget planeswalker\b|\bcreature or planeswalker\b/.test(
-            match[0],
-          );
+          const targetsCreature =
+            /\btarget creature\b|\bcreature or planeswalker\b/.test(match[0]);
+          const targetsPlaneswalker =
+            /\btarget planeswalker\b|\bcreature or planeswalker\b/.test(
+              match[0],
+            );
           return targetsCreature && targetsPlaneswalker
             ? 'Deals Damage to Creature or Planeswalker'
             : targetsPlaneswalker
@@ -432,9 +445,10 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
     );
     effects.slice(damageRemovalStart).forEach((effect) => {
       if (effect.evidence[0]?.detectorId !== 'damage-removal') return;
-      const affectsMultipleTargets = /\b(?:each|all)\b[^.\n]*\b(?:creatures?|planeswalkers?)\b/.test(
-        effect.evidence[0].matchedText,
-      );
+      const affectsMultipleTargets =
+        /\b(?:each|all)\b[^.\n]*\b(?:creatures?|planeswalkers?)\b/.test(
+          effect.evidence[0].matchedText,
+        );
       effect.quantity = {
         minimum: 1,
         expected: affectsMultipleTargets ? 4 : 1,
@@ -505,6 +519,29 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
       effects,
       card,
       paragraph,
+      'counter-amplifier',
+      /\bif one or more \+1\/\+1 counters? would be put on [^.\n]+,\s*that many plus (?:one|two|three|\d+) \+1\/\+1 counters? (?:are|is) put on (?:it|that creature|that permanent) instead\b/g,
+      {
+        label: 'Amplifies +1/+1 Counters',
+        direction: 'listens',
+        event: 'counter-added',
+        subject: (match) => ({
+          kind: 'creature',
+          controller: 'you',
+          qualifiers: [
+            /\b(?:a creature|creatures? you control|target creature)\b/.test(
+              match[0],
+            )
+              ? 'creature-wide'
+              : 'self',
+          ],
+        }),
+      },
+    );
+    addMatches(
+      effects,
+      card,
+      paragraph,
       'outlast-counter-placement',
       /^outlast\b[^.\n]*/g,
       {
@@ -563,7 +600,11 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
         label: 'Counts Total Creature Power',
         direction: 'listens',
         event: 'power-increased',
-        subject: () => ({ kind: 'creature', controller: 'you', qualifiers: ['total-power'] }),
+        subject: () => ({
+          kind: 'creature',
+          controller: 'you',
+          qualifiers: ['total-power'],
+        }),
       },
     );
     addMatches(
@@ -579,6 +620,38 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
         subject: () => ({ kind: 'creature', controller: 'you' }),
       },
     );
+    const opposingPowerReductionStart = effects.length;
+    addMatches(
+      effects,
+      card,
+      paragraph,
+      'opposing-power-reduction',
+      /\b(?:target creature|each creature an opponent controls|(?:each |all )?creatures? your opponents? control)\b[^.\n]*\b(?:gets?|get) -(?:x|\d+)\/-?(?:x|\d+)\b[^.\n]*/g,
+      {
+        label: 'Reduces Opposing Creature Power',
+        direction: 'emits',
+        event: 'power-reduced',
+        subject: () => ({
+          kind: 'creature',
+          controller: 'opponent',
+        }),
+      },
+    );
+    effects.slice(opposingPowerReductionStart).forEach((effect) => {
+      if (
+        effect.evidence[0]?.detectorId === 'opposing-power-reduction' &&
+        /\bcreatures? your opponents? control\b|\beach creature an opponent controls\b/.test(
+          effect.evidence[0].matchedText,
+        )
+      )
+        effect.quantity = {
+          minimum: 0,
+          expected: 4,
+          unbounded: true,
+          scalesWithPlayers: true,
+          expression: 'opposing creatures',
+        };
+    });
     addMatches(
       effects,
       card,
@@ -602,7 +675,11 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
         label: 'Scales with Creature Power',
         direction: 'listens',
         event: 'power-increased',
-        subject: () => ({ kind: 'creature', controller: 'you', qualifiers: ['power-scaling'] }),
+        subject: () => ({
+          kind: 'creature',
+          controller: 'you',
+          qualifiers: ['power-scaling'],
+        }),
       },
     );
     const keywordGrantStart = effects.length;
@@ -613,7 +690,8 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
       'keyword-grant',
       /\b(?:it|that creature|target creature|target attacking creature|creatures? you control) gains? (?:flying|first strike|double strike|deathtouch|fear|haste|hexproof|horsemanship|indestructible|intimidate|lifelink|menace|reach|shadow|skulk|trample|vigilance)\b[^.\n]*/g,
       {
-        label: (match) => `Grants ${match[0].match(/\b(flying|first strike|double strike|deathtouch|fear|haste|hexproof|horsemanship|indestructible|intimidate|lifelink|menace|reach|shadow|skulk|trample|vigilance)\b/)?.[1]?.replace(/\b\w/g, (letter) => letter.toUpperCase()) ?? 'Keyword'}`,
+        label: (match) =>
+          `Grants ${match[0].match(/\b(flying|first strike|double strike|deathtouch|fear|haste|hexproof|horsemanship|indestructible|intimidate|lifelink|menace|reach|shadow|skulk|trample|vigilance)\b/)?.[1]?.replace(/\b\w/g, (letter) => letter.toUpperCase()) ?? 'Keyword'}`,
         direction: 'grants',
         event: 'keyword-granted',
         subject: () => ({ kind: 'creature', controller: 'you' }),
@@ -640,14 +718,17 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
       'counter-conditional-keyword-grant',
       /\b(?:each|all) creatures? you control with (?:a|one or more) \+1\/\+1 counters? on (?:it|them) (?:has|have) (?:flying|first strike|double strike|deathtouch|fear|haste|hexproof|horsemanship|indestructible|intimidate|lifelink|menace|reach|shadow|skulk|trample|vigilance)\b[^.\n]*/g,
       {
-        label: (match) => `Grants ${match[0].match(/\b(flying|first strike|double strike|deathtouch|fear|haste|hexproof|horsemanship|indestructible|intimidate|lifelink|menace|reach|shadow|skulk|trample|vigilance)\b/)?.[1]?.replace(/\b\w/g, (letter) => letter.toUpperCase()) ?? 'Keyword'} to Creatures with +1/+1 Counters`,
+        label: (match) =>
+          `Grants ${match[0].match(/\b(flying|first strike|double strike|deathtouch|fear|haste|hexproof|horsemanship|indestructible|intimidate|lifelink|menace|reach|shadow|skulk|trample|vigilance)\b/)?.[1]?.replace(/\b\w/g, (letter) => letter.toUpperCase()) ?? 'Keyword'} to Creatures with +1/+1 Counters`,
         direction: 'grants',
         event: 'keyword-granted',
         subject: () => ({ kind: 'creature', controller: 'you' }),
       },
     );
     effects.slice(counterKeywordGrantStart).forEach((effect) => {
-      if (effect.evidence[0]?.detectorId === 'counter-conditional-keyword-grant')
+      if (
+        effect.evidence[0]?.detectorId === 'counter-conditional-keyword-grant'
+      )
         effect.quantity = {
           minimum: 0,
           expected: 4,
@@ -662,6 +743,40 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
       event: 'keyword-granted',
       subject: () => ({ kind: 'spell', qualifiers: ['self'] }),
     });
+    addMatches(
+      effects,
+      card,
+      paragraph,
+      'self-vigilance',
+      /^(?:[a-z -]+,\s*)*vigilance(?:,\s*[a-z -]+)*$/g,
+      {
+        label: 'Has Vigilance',
+        direction: 'grants',
+        event: 'keyword-granted',
+        subject: () => ({
+          kind: 'creature',
+          controller: 'you',
+          qualifiers: ['self'],
+        }),
+      },
+    );
+    addMatches(
+      effects,
+      card,
+      paragraph,
+      'self-trample',
+      /^(?:[a-z -]+,\s*)*trample(?:,\s*[a-z -]+)*$/g,
+      {
+        label: 'Has Trample',
+        direction: 'grants',
+        event: 'keyword-granted',
+        subject: () => ({
+          kind: 'creature',
+          controller: 'you',
+          qualifiers: ['self'],
+        }),
+      },
+    );
     addMatches(
       effects,
       card,
@@ -834,7 +949,11 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
         label: 'Counts Cards in Graveyard',
         direction: 'listens',
         event: 'accessed',
-        subject: () => ({ kind: 'card', controller: 'you', qualifiers: ['graveyard-count'] }),
+        subject: () => ({
+          kind: 'card',
+          controller: 'you',
+          qualifiers: ['graveyard-count'],
+        }),
       },
     );
     addMatches(
@@ -847,7 +966,11 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
         label: 'Looks at Top Card of Library',
         direction: 'grants',
         event: 'accessed',
-        subject: () => ({ kind: 'card', controller: 'you', qualifiers: ['top-of-library'] }),
+        subject: () => ({
+          kind: 'card',
+          controller: 'you',
+          qualifiers: ['top-of-library'],
+        }),
         sourceZone: 'library',
       },
     );
@@ -874,7 +997,11 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
         label: 'Puts Top Land into Hand',
         direction: 'emits',
         event: 'drawn',
-        subject: () => ({ kind: 'land', controller: 'you', qualifiers: ['top-of-library'] }),
+        subject: () => ({
+          kind: 'land',
+          controller: 'you',
+          qualifiers: ['top-of-library'],
+        }),
         sourceZone: 'library',
         destinationZone: 'hand',
       },
@@ -889,7 +1016,11 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
         label: 'Puts Top Card into Graveyard',
         direction: 'emits',
         event: 'milled',
-        subject: () => ({ kind: 'card', controller: 'you', qualifiers: ['top-of-library'] }),
+        subject: () => ({
+          kind: 'card',
+          controller: 'you',
+          qualifiers: ['top-of-library'],
+        }),
         sourceZone: 'library',
         destinationZone: 'graveyard',
       },
@@ -904,7 +1035,11 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
         label: 'Plays Cards from Top of Library',
         direction: 'emits',
         event: 'played',
-        subject: () => ({ kind: 'card', controller: 'you', qualifiers: ['top-of-library'] }),
+        subject: () => ({
+          kind: 'card',
+          controller: 'you',
+          qualifiers: ['top-of-library'],
+        }),
         sourceZone: 'library',
       },
     );
@@ -1027,22 +1162,15 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
         subject: () => ({ kind: 'creature' }),
       },
     );
-    addMatches(
-      effects,
-      card,
-      paragraph,
-      'gravestorm',
-      /\bgravestorm\b/g,
-      {
-        label: 'Gravestorm — Counts Permanents Put into Graveyards',
-        direction: 'listens',
-        event: 'dies',
-        subject: () => ({
-          kind: 'permanent',
-          qualifiers: ['from-battlefield-to-graveyard'],
-        }),
-      },
-    );
+    addMatches(effects, card, paragraph, 'gravestorm', /\bgravestorm\b/g, {
+      label: 'Gravestorm — Counts Permanents Put into Graveyards',
+      direction: 'listens',
+      event: 'dies',
+      subject: () => ({
+        kind: 'permanent',
+        qualifiers: ['from-battlefield-to-graveyard'],
+      }),
+    });
     addMatches(
       effects,
       card,
@@ -1067,7 +1195,8 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
       'named-token-payoff',
       /\b(?:number of |other |each |all )?(clues?|treasures?|food|blood|maps?|gold|powerstones?|incubators?) you control\b/g,
       {
-        label: (match) => `Uses ${match[1][0].toUpperCase()}${match[1].slice(1)}`,
+        label: (match) =>
+          `Uses ${match[1][0].toUpperCase()}${match[1].slice(1)}`,
         direction: 'listens',
         event: 'created',
         subject: (match) => subjectFrom(match[1]),
@@ -1134,6 +1263,31 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
       effects,
       card,
       paragraph,
+      'bounce',
+      /\breturn target (?:spell or )?(?:nonland )?(?:permanent|creature|artifact|enchantment|planeswalker|battle)(?: an opponent controls)? to its owner'?s hand\b/g,
+      {
+        label: (match) =>
+          /\bspell or\b/.test(match[0])
+            ? 'Returns Spell or Nonland Permanent to Hand'
+            : 'Returns Permanent to Hand',
+        direction: 'emits',
+        event: 'returned',
+        subject: (match) => ({
+          ...subjectFrom(match[0], card),
+          controller: 'opponent',
+          qualifiers: [
+            /\bnonland\b/.test(match[0]) ? 'nonland' : '',
+            /\bspell or\b/.test(match[0]) ? 'spell-option' : '',
+            'single-target',
+          ].filter(Boolean),
+        }),
+        destinationZone: 'hand',
+      },
+    );
+    addMatches(
+      effects,
+      card,
+      paragraph,
       'token-create',
       /\bcreates?\b[^.\n]*\b(?:tokens?|treasures?|clues?|food|blood|maps?|gold|powerstones?|incubators?)\b/g,
       {
@@ -1149,6 +1303,53 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
         event: 'created',
       },
     );
+    // A bundled replacement such as "create a Clue, Food, or Treasure token,
+    // instead create one of each" produces three distinct resources. The
+    // generic detector used to keep only the first named token, which made
+    // persistent token multipliers look like ordinary one-Clue producers.
+    const bundledTokenEffects: CardEffect[] = [];
+    effects.slice(tokenCreationStart).forEach((effect) => {
+      if (effect.evidence[0]?.detectorId !== 'token-create') return;
+      const creationClause = effect.evidence[0].paragraphText;
+      const tokenTypes = NAMED_TOKENS.filter((type) =>
+        new RegExp(`\\b${type}s?\\b`).test(creationClause),
+      );
+      if (tokenTypes.length < 2 || !/\bone of each\b/.test(creationClause))
+        return;
+      tokenTypes.forEach((tokenType, index) => {
+        const nextEffect =
+          index === 0
+            ? effect
+            : {
+                ...effect,
+                id: `${effect.id}:${tokenType}`,
+                subject: { ...effect.subject },
+                quantity: { ...effect.quantity },
+                timing: { ...effect.timing },
+                conditions: [...effect.conditions],
+                evidence: effect.evidence.map((entry) => ({ ...entry })),
+              };
+        nextEffect.label = `Creates ${tokenType[0].toUpperCase()}${tokenType.slice(1)}`;
+        nextEffect.subject = {
+          kind: 'token',
+          tokenType,
+          controller: 'you',
+          qualifiers: ['replacement-output'],
+        };
+        // Each application creates one of each named token. Aggregate engine
+        // scoring sees all outputs, without pretending it creates three of
+        // every individual token type.
+        nextEffect.quantity = {
+          minimum: 1,
+          expected: 1,
+          unbounded: false,
+          scalesWithPlayers: false,
+          expression: 'one of each',
+        };
+        if (index > 0) bundledTokenEffects.push(nextEffect);
+      });
+    });
+    effects.push(...bundledTokenEffects);
     addMatches(
       effects,
       card,
@@ -1187,7 +1388,7 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
             ? 'Reduces Activation Costs'
             : /\bimprovise\b/.test(match[0])
               ? 'Grants Improvise Cost Reduction'
-            : 'Reduces Casting Costs',
+              : 'Reduces Casting Costs',
         direction: 'grants',
         event: (match) =>
           /\bactivat(?:ed|e)\b/.test(match[0]) ? 'activated' : 'cast',
@@ -1252,22 +1453,15 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
       subject: () => ({ kind: 'card', controller: 'you' }),
       destinationZone: 'hand',
     });
-    addMatches(
-      effects,
-      card,
-      paragraph,
-      'discard',
-      /\bdiscards?\b[^.\n]*/g,
-      {
-        label: 'Discards Cards',
-        direction: /^\s*(?:when|whenever|if)\b/.test(paragraph.text)
-          ? 'listens'
-          : 'emits',
-        event: 'discarded',
-        subject: () => ({ kind: 'card' }),
-        destinationZone: 'graveyard',
-      },
-    );
+    addMatches(effects, card, paragraph, 'discard', /\bdiscards?\b[^.\n]*/g, {
+      label: 'Discards Cards',
+      direction: /^\s*(?:when|whenever|if)\b/.test(paragraph.text)
+        ? 'listens'
+        : 'emits',
+      event: 'discarded',
+      subject: () => ({ kind: 'card' }),
+      destinationZone: 'graveyard',
+    });
     addMatches(
       effects,
       card,
@@ -1471,10 +1665,12 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
       /\b(?:destroy|exile)\b[^.\n]*\b(?:target|all|each|that)\b[^.\n]*\b(?:creatures?|artifacts?|enchantments?|lands?|permanents?|planeswalkers?|battles?)(?:\s+or\s+(?:creatures?|artifacts?|enchantments?|lands?|permanents?|planeswalkers?|battles?))?\b/g,
       {
         label: (match) => {
-          const targets = [...match[0].matchAll(
-            /\b(creatures?|artifacts?|enchantments?|lands?|permanents?|planeswalkers?|battles?)\b/g,
-          )].map((target) =>
-            `${target[1][0].toUpperCase()}${target[1].slice(1)}`,
+          const targets = [
+            ...match[0].matchAll(
+              /\b(creatures?|artifacts?|enchantments?|lands?|permanents?|planeswalkers?|battles?)\b/g,
+            ),
+          ].map(
+            (target) => `${target[1][0].toUpperCase()}${target[1].slice(1)}`,
           );
           const action = match[0].startsWith('destroy') ? 'Destroys' : 'Exiles';
           return `${action} ${[...new Set(targets)].join(' or ') || 'Permanents'}`;
@@ -1500,6 +1696,25 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
       effects,
       card,
       paragraph,
+      'target-redirect',
+      /\b(?:change (?:a|the) targets? of target [^.\n]*|(?:you may )?choose new targets? for target [^.\n]*(?:spell|ability))\b[^.\n]*/g,
+      {
+        label: 'Redirects Spell or Ability',
+        direction: 'emits',
+        event: 'redirected',
+        subject: (match) => ({
+          kind: /\bspell\b/.test(match[0]) ? 'spell' : 'card',
+          qualifiers: [
+            /\babilit(?:y|ies)\b/.test(match[0]) ? 'ability' : '',
+            /\bsingle target\b/.test(match[0]) ? 'single-target' : '',
+          ].filter(Boolean),
+        }),
+      },
+    );
+    addMatches(
+      effects,
+      card,
+      paragraph,
       'tutor',
       /\bsearch (?:your|their|that player'?s) library for\b[^.\n]*/g,
       {
@@ -1510,6 +1725,21 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
         sourceZone: 'library',
       },
     );
+    effects.slice(tutorStart).forEach((effect) => {
+      if (effect.evidence[0]?.detectorId !== 'tutor') return;
+      const text = effect.evidence[0].matchedText;
+      if (/\bbasic land card\b/.test(text)) {
+        effect.label = 'Searches for Basic Land';
+        effect.subject = { kind: 'land', controller: 'you' };
+      } else if (/\bland card\b/.test(text)) {
+        effect.label = 'Searches for Land';
+        effect.subject = { kind: 'land', controller: 'you' };
+      }
+      if (/\bput (?:it|that card) into your hand\b/.test(text))
+        effect.destinationZone = 'hand';
+      if (/\bput (?:it|that card) onto the battlefield\b/.test(text))
+        effect.destinationZone = 'battlefield';
+    });
     addMatches(
       effects,
       card,
@@ -1579,7 +1809,9 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
     effects.slice(investigateStart).forEach((effect) => {
       if (effect.evidence[0]?.detectorId !== 'investigate') return;
       const matched = effect.evidence[0].matchedText;
-      if (/\binvestigate x times\b|\bfor each\b|\btotal number of\b/.test(matched)) {
+      if (
+        /\binvestigate x times\b|\bfor each\b|\btotal number of\b/.test(matched)
+      ) {
         effect.quantity = {
           minimum: 0,
           // Scoring deliberately caps quantity credit at four. Recording four
@@ -1592,19 +1824,26 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
         };
       }
     });
-    addMatches(effects, card, paragraph, 'mill', /\b(?:(?:they|target player|that player|an opponent) )?mills?\b[^.\n]*/g, {
-      label: 'Mills Cards',
-      direction: 'emits',
-      event: 'milled',
-      subject: (match) => ({
-        kind: 'card',
-        controller: /\b(?:they|opponent|target player)\b/.test(match[0])
-          ? 'target-player'
-          : 'you',
-      }),
-      sourceZone: 'library',
-      destinationZone: 'graveyard',
-    });
+    addMatches(
+      effects,
+      card,
+      paragraph,
+      'mill',
+      /\b(?:(?:they|target player|that player|an opponent) )?mills?\b[^.\n]*/g,
+      {
+        label: 'Mills Cards',
+        direction: 'emits',
+        event: 'milled',
+        subject: (match) => ({
+          kind: 'card',
+          controller: /\b(?:they|opponent|target player)\b/.test(match[0])
+            ? 'target-player'
+            : 'you',
+        }),
+        sourceZone: 'library',
+        destinationZone: 'graveyard',
+      },
+    );
     addMatches(
       effects,
       card,
@@ -1622,21 +1861,14 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
         }),
       },
     );
-    addMatches(
-      effects,
-      card,
-      paragraph,
-      'surveil',
-      /\bsurveils?\b[^.\n]*/g,
-      {
-        label: 'Surveils',
-        direction: 'emits',
-        event: 'surveilled',
-        subject: () => ({ kind: 'card' }),
-        sourceZone: 'library',
-        destinationZone: 'graveyard',
-      },
-    );
+    addMatches(effects, card, paragraph, 'surveil', /\bsurveils?\b[^.\n]*/g, {
+      label: 'Surveils',
+      direction: 'emits',
+      event: 'surveilled',
+      subject: () => ({ kind: 'card' }),
+      sourceZone: 'library',
+      destinationZone: 'graveyard',
+    });
     addMatches(
       effects,
       card,
@@ -1692,7 +1924,11 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
         label: 'Creates Creature Token Copies',
         direction: 'creates',
         event: 'copied',
-        subject: () => ({ kind: 'creature', controller: 'you', qualifiers: ['token', 'copy'] }),
+        subject: () => ({
+          kind: 'creature',
+          controller: 'you',
+          qualifiers: ['token', 'copy'],
+        }),
       },
     );
     addMatches(
@@ -1705,7 +1941,11 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
         label: 'Enters as a Creature Copy',
         direction: 'transforms',
         event: 'copied',
-        subject: () => ({ kind: 'creature', controller: 'you', qualifiers: ['copy'] }),
+        subject: () => ({
+          kind: 'creature',
+          controller: 'you',
+          qualifiers: ['copy'],
+        }),
       },
     );
     addMatches(
@@ -1718,7 +1958,11 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
         label: 'Turns a Creature into a Copy',
         direction: 'transforms',
         event: 'copied',
-        subject: () => ({ kind: 'creature', controller: 'you', qualifiers: ['copy'] }),
+        subject: () => ({
+          kind: 'creature',
+          controller: 'you',
+          qualifiers: ['copy'],
+        }),
       },
     );
     addMatches(

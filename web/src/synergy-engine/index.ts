@@ -30,6 +30,7 @@ export {
   engineSideBalance,
   lowSynergyScore,
   manualThemeProtectionRate,
+  protectedOverallCutScore,
 } from './scoring';
 export {
   ROLE_DEFINITIONS,

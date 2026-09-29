@@ -11,6 +11,7 @@ export const SYNERGY_SCORING_CONFIG = {
   manualThemeProtectionMaximum: 0.5,
   secondaryEngineWeight: 0.25,
   tertiaryEngineWeight: 0.1,
+  payoffEnginePrevalenceFloor: 0.65,
 } as const;
 
 export function manualThemeProtectionRate(boostedThemeCount: number) {
@@ -91,4 +92,38 @@ export function lowSynergyScore({
     indirectCommander: indirectCommanderProtection,
   }).combined;
   return { base, protection, score: base * (1 - protection) };
+}
+
+export function protectedOverallCutScore({
+  curve,
+  synergyBeforeProtections,
+  price,
+  popularity,
+  priceIsActive,
+  standardProtectionRate,
+  manualThemeProtectionRate = 0,
+}: {
+  curve: number;
+  synergyBeforeProtections: number;
+  price: number;
+  popularity: number;
+  priceIsActive: boolean;
+  standardProtectionRate: number;
+  manualThemeProtectionRate?: number;
+}) {
+  const synergyAfterManualThemeProtection =
+    synergyBeforeProtections * (1 - manualThemeProtectionRate);
+  const beforeProtection = priceIsActive
+    ? curve * 0.4 +
+      synergyAfterManualThemeProtection * 0.3 +
+      price * 0.2 +
+      popularity * 0.1
+    : curve * 0.5 +
+      synergyAfterManualThemeProtection * 0.375 +
+      popularity * 0.125;
+  return {
+    synergyAfterManualThemeProtection,
+    beforeProtection,
+    score: beforeProtection * (1 - standardProtectionRate),
+  };
 }
