@@ -20,6 +20,37 @@ const effectsFor = (name: string, text: string, type?: string) =>
   extractCardEffects(fixtureCard(name, text, type));
 
 describe('corrected named card regressions', () => {
+  it('makes Maskwood Nexus an enabler for established creature types', () => {
+    const effects = effectsFor(
+      'Maskwood Nexus',
+      'Creatures you control are every creature type. The same is true for creature spells you control and creature cards you own that are not on the battlefield.\n{3}, {T}: Create a 2/2 blue Shapeshifter creature token with changeling.',
+      'Artifact',
+    );
+    const signals = buildEngineSignals(effects);
+    expect(effects.map((effect) => effect.label)).toContain(
+      'Grants Every Creature Type',
+    );
+    expect(engineParticipation(signals, 'engine:type:dog').enabler).toBe(true);
+    expect(engineParticipation(signals, 'engine:type:vampire').enabler).toBe(
+      true,
+    );
+  });
+
+  it('treats changeling cards as support for established typal engines', () => {
+    const effects = effectsFor(
+      'Universal Automaton',
+      'Changeling',
+      'Artifact Creature — Shapeshifter',
+    );
+    const signals = buildEngineSignals(effects);
+    expect(effects.map((effect) => effect.label)).toContain('Has Changeling');
+    expect(engineParticipation(signals, 'engine:type:dog')).toMatchObject({
+      enabler: false,
+      payoff: false,
+      support: true,
+    });
+  });
+
   it('captures both Many Partings effects without making land-to-hand an ETB', () => {
     const card = fixtureCard(
       'Many Partings',

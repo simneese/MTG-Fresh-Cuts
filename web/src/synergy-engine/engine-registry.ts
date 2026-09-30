@@ -456,8 +456,9 @@ export function engineDefinitionForId(id: string) {
       label: `${type.replace(/\b\w/g, (letter) => letter.toUpperCase())} Typal`,
       desiredEnablersPerPayoff: 3,
       legacyTags: [`type: ${type}`],
-      enablerSignals: [`type:${type}-present`],
+      enablerSignals: [`type:${type}-present`, 'all-creature-types-enabled'],
       payoffSignals: [`type:${type}-present`],
+      supportSignals: ['all-creature-types-supported'],
       requiresFunctionalPayoff: true,
     } satisfies EngineDefinition;
   }

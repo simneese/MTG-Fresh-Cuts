@@ -318,6 +318,10 @@ export function buildEngineSignals(effects: CardEffect[]): EngineSignals {
     )
       support.add('combat-damage-supported');
     if (detectorId === 'self-trample') support.add('creature-power-supported');
+    if (detectorId === 'self-changeling')
+      support.add('all-creature-types-supported');
+    if (detectorId === 'all-creature-types-grant')
+      emittedSeeds.add('all-creature-types-enabled');
     if (
       detectorId === 'self-vigilance' ||
       (['keyword-grant', 'counter-conditional-keyword-grant'].includes(

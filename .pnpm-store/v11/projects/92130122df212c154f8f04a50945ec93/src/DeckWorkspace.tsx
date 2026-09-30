@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { AlertCircle, ArrowLeft, BarChart3, Check, Crown, DollarSign, Grid2X2, ImageIcon, Leaf, List, LoaderCircle, RefreshCw, Scissors, Search } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { AlertCircle, ArrowLeft, BarChart3, Check, Crown, DollarSign, Grid2X2, ImageIcon, Leaf, List, RefreshCw, Scissors, Search } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
@@ -79,6 +79,7 @@ export default function DeckWorkspace({ deckName, formatLabel, commander, cards,
   );
   const [cutCriterion, setCutCriterion] = useState<'all' | 'curve' | 'synergy' | 'price'>('all');
   const [selectedCuts, setSelectedCuts] = useState<Set<string>>(new Set());
+  const hasStartedPreparation = useRef(false);
 
   const filteredCards = useMemo(() => cards.filter((card) => card.name.toLowerCase().includes(search.trim().toLowerCase())), [cards, search]);
   const groups = useMemo(() => {
@@ -209,8 +210,13 @@ export default function DeckWorkspace({ deckName, formatLabel, commander, cards,
       ),
     );
   }
-  if (showCutNotice) return <CutWorkspace deckName={deckName} formatLabel={formatLabel} commander={commander} cards={cards} cardCount={cardCount} target={target} contextualPopularity={contextualPopularity} onCardQuantityChange={onCardQuantityChange} onBack={() => setShowCutNotice(false)} />;
-  if (preparationMessage) return <main className="grid min-h-screen place-items-center bg-background text-foreground"><section className="flex min-w-[300px] flex-col items-center rounded-2xl border border-white/10 bg-[#101311] px-10 py-12 text-center shadow-2xl shadow-black/30"><LoaderCircle className="size-9 animate-spin text-lime-300" /><p className="mt-5 font-heading text-lg font-semibold text-white">Preparing Make Cuts</p><p className="mt-2 text-sm text-zinc-500">{preparationMessage}</p></section></main>;
+  useEffect(() => {
+    if (hasStartedPreparation.current) return;
+    hasStartedPreparation.current = true;
+    void prepareMakeCuts();
+  }, []);
+  if (showCutNotice) return <CutWorkspace deckName={deckName} formatLabel={formatLabel} commander={commander} cards={cards} cardCount={cardCount} target={target} contextualPopularity={contextualPopularity} onCardQuantityChange={onCardQuantityChange} onBack={onBack} />;
+  if (preparationMessage) return <main className="min-h-screen bg-[#0b0f0e]"><p className="sr-only">{preparationMessage}</p></main>;
   return <main className="min-h-screen bg-background text-foreground">
     <header className="sticky top-0 z-20 border-b border-white/8 bg-[#0b0d0c]/90 backdrop-blur-xl">
       <div className="mx-auto flex max-w-[1540px] items-center justify-between gap-4 px-5 py-4 sm:px-8">

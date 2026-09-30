@@ -743,6 +743,44 @@ function extractCardEffectsUncached(card: EffectCard): CardEffect[] {
       event: 'keyword-granted',
       subject: () => ({ kind: 'spell', qualifiers: ['self'] }),
     });
+    addMatches(effects, card, paragraph, 'self-changeling', /^changeling$/g, {
+      label: 'Has Changeling',
+      direction: 'grants',
+      event: 'keyword-granted',
+      subject: () => ({
+        kind: 'card',
+        controller: 'you',
+        qualifiers: ['self', 'every-creature-type'],
+      }),
+    });
+    const everyCreatureTypeStart = effects.length;
+    addMatches(
+      effects,
+      card,
+      paragraph,
+      'all-creature-types-grant',
+      /\bcreatures? you control are every creature type\b[^.\n]*/g,
+      {
+        label: 'Grants Every Creature Type',
+        direction: 'grants',
+        event: 'keyword-granted',
+        subject: () => ({
+          kind: 'creature',
+          controller: 'you',
+          qualifiers: ['every-creature-type'],
+        }),
+      },
+    );
+    effects.slice(everyCreatureTypeStart).forEach((effect) => {
+      if (effect.evidence[0]?.detectorId !== 'all-creature-types-grant') return;
+      effect.quantity = {
+        minimum: 0,
+        expected: 4,
+        unbounded: true,
+        scalesWithPlayers: false,
+        expression: 'creatures you control',
+      };
+    });
     addMatches(
       effects,
       card,

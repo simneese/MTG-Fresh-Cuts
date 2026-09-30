@@ -233,6 +233,7 @@ function cardDetails(card: ParsedCard) {
 
 export default function Home() {
   const [screen, setScreen] = useState<'import' | 'deck'>('import');
+  const [isLeavingImport, setIsLeavingImport] = useState(false);
   const [deckName, setDeckName] = useState('');
   const [deckText, setDeckText] = useState(SAMPLE_DECK);
   const [format, setFormat] = useState<Format>('commander');
@@ -253,6 +254,12 @@ export default function Home() {
     format === 'custom' ? customTarget : FORMAT_RULES[format].target;
   const difference = target - cardCount;
   const resolvedCount = cards.filter((card) => cardDetails(card)).length;
+
+  function openDeckWorkspace() {
+    if (isLeavingImport) return;
+    setIsLeavingImport(true);
+    window.setTimeout(() => setScreen('deck'), 520);
+  }
 
   const visibleCards = useMemo(
     () =>
@@ -406,6 +413,7 @@ export default function Home() {
     }
   }
   function resetDeck() {
+    setIsLeavingImport(false);
     setCards([]);
     setErrors([]);
     setCommander('');
@@ -442,12 +450,15 @@ export default function Home() {
             );
           })
         }
-        onBack={() => setScreen('import')}
+        onBack={() => {
+          setIsLeavingImport(false);
+          setScreen('import');
+        }}
       />
     );
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
+    <main className={`min-h-screen bg-background text-foreground ${isLeavingImport ? 'deck-import-exit pointer-events-none' : ''}`}>
       <header className="border-b border-white/8 bg-[#0b0d0c]/85 backdrop-blur-xl">
         <div className="mx-auto flex max-w-[1480px] items-center justify-between px-5 py-4 sm:px-8">
           <div className="flex items-center gap-3">
@@ -698,7 +709,7 @@ export default function Home() {
                   }
                   onClick={() => {
                     if (!deckName.trim()) setDeckName('Unnamed');
-                    setScreen('deck');
+                    openDeckWorkspace();
                   }}
                 >
                   Open deck view <ChevronRight data-icon="inline-end" />

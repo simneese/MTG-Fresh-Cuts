@@ -122,6 +122,796 @@ main > div > section.mb-7 article:nth-child(2) > div:nth-child(2) span:hover {
   background: rgba(252, 165, 165, 0.16) !important;
 }
 
+.binder-card-keep > img {
+  box-shadow:
+    0 0 0 2px rgb(252 211 77 / 0.9),
+    0 0 18px rgb(252 211 77 / 0.48);
+}
+
+.binder-card-cut > img {
+  filter: saturate(0.18) brightness(0.42);
+  box-shadow:
+    0 0 0 2px rgb(248 113 113 / 0.9),
+    0 0 16px rgb(248 113 113 / 0.42);
+}
+
+@keyframes binder-inspection-enter {
+  from {
+    background-color: rgb(0 0 0 / 0%);
+    backdrop-filter: blur(0) saturate(1);
+  }
+  to {
+    background-color: rgb(0 0 0 / 38%);
+    backdrop-filter: blur(12px) saturate(0.72);
+  }
+}
+
+@keyframes binder-card-lift {
+  0% {
+    opacity: 0;
+    transform: translateY(72px) scale(0.58) rotate(-2deg);
+    filter: brightness(0.72);
+  }
+  62% {
+    opacity: 1;
+    transform: translateY(-8px) scale(1.025) rotate(0.4deg);
+    filter: brightness(1.06);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1) rotate(0);
+    filter: brightness(1);
+  }
+}
+
+@keyframes binder-details-unfurl {
+  from {
+    opacity: 0;
+    clip-path: inset(0 100% 0 0);
+    transform: translateX(-24px);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    transform: translateX(0);
+  }
+}
+
+@keyframes binder-inspection-exit {
+  from {
+    background-color: rgb(0 0 0 / 38%);
+    backdrop-filter: blur(12px) saturate(0.72);
+  }
+  to {
+    background-color: rgb(0 0 0 / 0%);
+    backdrop-filter: blur(0) saturate(1);
+  }
+}
+
+@keyframes binder-card-return {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1) rotate(0);
+    filter: brightness(1);
+  }
+  35% {
+    opacity: 1;
+    transform: translateY(8px) scale(0.97) rotate(-0.4deg);
+    filter: brightness(0.96);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(72px) scale(0.58) rotate(-2deg);
+    filter: brightness(0.72);
+  }
+}
+
+@keyframes binder-details-retract {
+  from {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    clip-path: inset(0 100% 0 0);
+    transform: translateX(-24px);
+  }
+}
+
+@keyframes binder-page-enter-next {
+  from {
+    opacity: 0.78;
+    transform: perspective(1400px) translateX(4px);
+  }
+  to {
+    opacity: 1;
+    transform: perspective(1400px) translateX(0) rotateY(0);
+  }
+}
+
+@keyframes binder-page-enter-previous {
+  from {
+    opacity: 0.78;
+    transform: perspective(1400px) translateX(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: perspective(1400px) translateX(0) rotateY(0);
+  }
+}
+
+@keyframes binder-sheet-unfold-next {
+  from {
+    opacity: 0.7;
+    transform: perspective(1400px) rotateY(-68deg) scaleX(0.94);
+    filter: brightness(0.62);
+    box-shadow: -22px 0 34px rgb(0 0 0 / 42%);
+  }
+  58% {
+    opacity: 0.96;
+    filter: brightness(0.9);
+    box-shadow: -10px 0 22px rgb(0 0 0 / 26%);
+  }
+  to {
+    opacity: 1;
+    transform: perspective(1200px) rotateY(0);
+    filter: brightness(1);
+    box-shadow: inset 14px 0 22px rgb(0 0 0 / 22%);
+  }
+}
+
+@keyframes binder-sheet-unfold-previous {
+  from {
+    opacity: 0.7;
+    transform: perspective(1400px) rotateY(68deg) scaleX(0.94);
+    filter: brightness(0.62);
+    box-shadow: 22px 0 34px rgb(0 0 0 / 42%);
+  }
+  58% {
+    opacity: 0.96;
+    filter: brightness(0.9);
+    box-shadow: 10px 0 22px rgb(0 0 0 / 26%);
+  }
+  to {
+    opacity: 1;
+    transform: perspective(1200px) rotateY(0);
+    filter: brightness(1);
+    box-shadow: inset -14px 0 22px rgb(0 0 0 / 22%);
+  }
+}
+
+@keyframes binder-full-page-next {
+  0% {
+    transform: perspective(1500px) rotateY(0deg);
+    box-shadow: -4px 0 10px rgb(0 0 0 / 14%);
+  }
+  48% {
+    box-shadow: -28px 0 44px rgb(0 0 0 / 48%);
+  }
+  52% {
+    box-shadow: 26px 0 42px rgb(0 0 0 / 44%);
+  }
+  100% {
+    transform: perspective(1500px) rotateY(-180deg);
+    box-shadow: 4px 0 10px rgb(0 0 0 / 12%);
+  }
+}
+
+@keyframes binder-full-page-previous {
+  0% {
+    transform: perspective(1500px) rotateY(0deg);
+    box-shadow: 4px 0 10px rgb(0 0 0 / 14%);
+  }
+  48% {
+    box-shadow: 28px 0 44px rgb(0 0 0 / 48%);
+  }
+  52% {
+    box-shadow: -26px 0 42px rgb(0 0 0 / 44%);
+  }
+  100% {
+    transform: perspective(1500px) rotateY(180deg);
+    box-shadow: -4px 0 10px rgb(0 0 0 / 12%);
+  }
+}
+
+@keyframes binder-page-face-hide {
+  0%,
+  42% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes binder-mana-backdrop-in {
+  from {
+    opacity: 0;
+    background-color: rgb(0 0 0 / 0%);
+    backdrop-filter: blur(0);
+  }
+  to {
+    opacity: 1;
+    background-color: rgb(0 0 0 / 40%);
+    backdrop-filter: blur(12px);
+  }
+}
+
+@keyframes binder-mana-pie-grow {
+  from {
+    opacity: 0.7;
+    transform: translateY(-38vh) scale(0.14);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes binder-mana-slice-exit {
+  from {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  55% {
+    opacity: 1;
+    transform: translate(var(--slice-x), var(--slice-y)) scale(1.02);
+  }
+  to {
+    opacity: 0;
+    transform: translate(var(--slice-x-far), var(--slice-y-far)) scale(0.94);
+  }
+}
+
+@keyframes binder-mana-slice-return {
+  from {
+    opacity: 0;
+    transform: translate(var(--slice-x-far), var(--slice-y-far)) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+}
+
+@keyframes binder-mana-analysis-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes binder-mana-analysis-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+@keyframes binder-mana-pie-close {
+  0%,
+  48% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0.7;
+    transform: translateY(-38vh) scale(0.14);
+  }
+}
+
+@keyframes binder-single-page-out-next {
+  from { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(-108%); opacity: 0.82; }
+}
+
+@keyframes binder-single-page-in-next {
+  from { transform: translateX(108%); opacity: 0.82; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes binder-single-page-out-previous {
+  from { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(108%); opacity: 0.82; }
+}
+
+@keyframes binder-single-page-in-previous {
+  from { transform: translateX(-108%); opacity: 0.82; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes binder-content-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes binder-content-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes binder-train-wheel-spin {
+  to { transform: rotate(-360deg); }
+}
+
+@keyframes binder-train-rod-cycle {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(-.65px, -1.2px); }
+  50% { transform: translate(-1.3px, 0); }
+  75% { transform: translate(-.65px, 1.2px); }
+}
+
+@keyframes binder-train-smoke-rise {
+  0% { opacity: 0; transform: translate(0, 1px) scale(.55); }
+  24% { opacity: .72; }
+  100% { opacity: 0; transform: translate(2px, -7px) scale(1.45); }
+}
+
+@keyframes binder-engine-window-enter {
+  from { opacity: 0; transform: scale(.96) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes binder-engine-card-enter {
+  from { opacity: 0; transform: translateY(9px) scale(.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes binder-intro-arrive {
+  from { opacity: 0; transform: translate(-50%, 18px) scale(.94); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+
+@keyframes binder-intro-shift-right {
+  from { transform: translateX(-50%); }
+  to { transform: translateX(calc(-50% + var(--binder-intro-shift))); }
+}
+
+@keyframes binder-intro-cover-open {
+  0% {
+    transform: perspective(1500px) rotateY(0deg);
+    box-shadow: -4px 0 10px rgb(0 0 0 / 14%);
+  }
+  48% { box-shadow: -28px 0 44px rgb(0 0 0 / 48%); }
+  52% { box-shadow: 26px 0 42px rgb(0 0 0 / 44%); }
+  100% {
+    transform: perspective(1500px) rotateY(-180deg);
+    box-shadow: 4px 0 10px rgb(0 0 0 / 12%);
+  }
+}
+
+@keyframes binder-intro-clear {
+  0%, 12% { opacity: 1; }
+  72%, 100% { opacity: 0; }
+}
+
+@keyframes binder-intro-book-release {
+  0%, 96% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes binder-workspace-chrome-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes binder-live-spread-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes deck-import-fade-out {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(.994); }
+}
+
+@keyframes binder-intro-title-settle {
+  from { opacity: 0; transform: translateY(7px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes binder-intro-symbol-settle {
+  from { opacity: 0; transform: translateY(7px) scale(.78); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.binder-intro-cover {
+  transform-style: preserve-3d;
+  z-index: 2;
+}
+
+.binder-intro-pages {
+  z-index: 1;
+}
+
+.binder-intro-face {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform-style: preserve-3d;
+}
+
+.binder-intro-cover-front {
+  transform: rotateY(0deg);
+}
+
+.binder-intro-cover-back {
+  transform: rotateY(180deg);
+}
+
+.binder-intro-cover h1 {
+  animation: binder-intro-title-settle 380ms ease-out 170ms both;
+}
+
+.binder-intro-mana-symbol {
+  animation: binder-intro-symbol-settle 330ms cubic-bezier(.2,.8,.2,1)
+    calc(320ms + var(--mana-index) * 75ms) both;
+}
+
+.binder-intro-cover .binder-intro-mana-symbol:nth-child(2n) {
+  margin-top: 5px;
+}
+
+.binder-intro-cover .binder-intro-mana-symbol:nth-child(2n + 1) {
+  margin-bottom: 5px;
+}
+
+.binder-intro-book {
+  --binder-intro-shift: calc(25vw - 10px);
+  left: 50%;
+  transform-style: preserve-3d;
+  animation: binder-intro-arrive 440ms cubic-bezier(.2,.8,.2,1) both;
+  z-index: 1;
+}
+
+.binder-intro-cover,
+.binder-intro-book {
+  will-change: transform, opacity;
+}
+
+.binder-intro-cover {
+  transform-origin: left center;
+}
+
+.binder-intro-shifting .binder-intro-book {
+  animation: binder-intro-shift-right 560ms cubic-bezier(.32,.72,.2,1) both;
+}
+
+.binder-intro-opening .binder-intro-curtain {
+  animation: binder-intro-clear 1.3s ease-out both;
+}
+
+.binder-intro-opening .binder-intro-book {
+  transform: translateX(calc(-50% + var(--binder-intro-shift)));
+  animation: binder-intro-book-release 1.3s ease-out both;
+}
+
+.binder-intro-opening .binder-intro-cover {
+  animation: binder-intro-cover-open 1.04s cubic-bezier(.42,0,.58,1) both;
+}
+
+.binder-workspace-intro .binder-workspace-chrome {
+  opacity: 0;
+}
+
+.binder-workspace-intro .binder-spread {
+  opacity: 0;
+}
+
+.binder-workspace-revealing .binder-spread {
+  animation: binder-live-spread-in 140ms linear 1.1s both;
+}
+
+.binder-workspace-revealing .binder-workspace-chrome {
+  animation: binder-workspace-chrome-in 200ms ease-out 1.08s both;
+}
+
+.deck-import-exit {
+  transform-origin: center;
+  will-change: opacity, transform;
+  animation: deck-import-fade-out 500ms cubic-bezier(.4,0,.7,.2) both;
+}
+
+@media (max-width: 699px) {
+  .binder-intro-book {
+    --binder-intro-shift: 0px;
+    width: calc(100vw - 24px);
+  }
+}
+
+.binder-train-wheel {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.binder-smoke-puff {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.binder-engine-trigger:hover .binder-train-wheel,
+.binder-engine-running .binder-train-wheel {
+  animation: binder-train-wheel-spin .58s linear infinite;
+}
+
+.binder-engine-trigger:hover .binder-train-rod,
+.binder-engine-running .binder-train-rod {
+  animation: binder-train-rod-cycle .58s ease-in-out infinite;
+}
+
+.binder-engine-trigger:hover .binder-smoke-puff-one,
+.binder-engine-running .binder-smoke-puff-one {
+  animation: binder-train-smoke-rise 1.15s ease-out infinite;
+}
+
+.binder-engine-trigger:hover .binder-smoke-puff-two,
+.binder-engine-running .binder-smoke-puff-two {
+  animation: binder-train-smoke-rise 1.15s ease-out .48s infinite;
+}
+
+.binder-engine-window {
+  animation: binder-engine-window-enter 260ms cubic-bezier(.2,.8,.2,1) both;
+}
+
+.binder-engine-node {
+  animation: binder-engine-card-enter 240ms ease-out calc(var(--engine-index) * 24ms) both;
+}
+
+.binder-engine-cards {
+  animation: binder-engine-card-enter 220ms ease-out both;
+}
+
+.binder-engine-card {
+  animation: binder-engine-card-enter 220ms ease-out calc(var(--card-index) * 18ms) both;
+}
+
+.binder-inspection-backdrop {
+  animation: binder-inspection-enter 260ms ease-out both;
+}
+
+.binder-lifted-card {
+  transform-origin: 50% 78%;
+  animation: binder-card-lift 460ms cubic-bezier(0.2, 0.82, 0.2, 1) both;
+}
+
+.binder-inspection-details {
+  transform-origin: left center;
+  animation: binder-details-unfurl 360ms cubic-bezier(0.2, 0.72, 0.2, 1)
+    210ms both;
+}
+
+.binder-inspection-closing {
+  animation: binder-inspection-exit 500ms ease-in 40ms both;
+}
+
+.binder-inspection-closing .binder-inspection-details {
+  animation: binder-details-retract 190ms ease-in both;
+}
+
+.binder-inspection-closing .binder-lifted-card {
+  animation: binder-card-return 400ms cubic-bezier(0.55, 0, 0.8, 0.18) 90ms
+    both;
+}
+
+.binder-turn-next {
+  transform-origin: left center;
+  animation: binder-page-enter-next 620ms cubic-bezier(0.2, 0.68, 0.2, 1)
+    both;
+}
+
+.binder-turn-next > :last-child {
+  transform-origin: left center;
+  animation: binder-sheet-unfold-next 920ms cubic-bezier(0.16, 0.68, 0.18, 1)
+    both;
+}
+
+.binder-turn-previous {
+  transform-origin: right center;
+  animation: binder-page-enter-previous 620ms
+    cubic-bezier(0.2, 0.68, 0.2, 1) both;
+}
+
+.binder-turn-previous > :first-child {
+  transform-origin: right center;
+  animation: binder-sheet-unfold-previous 920ms
+    cubic-bezier(0.16, 0.68, 0.18, 1) both;
+}
+
+.binder-turning-sheet {
+  transform-style: preserve-3d;
+  will-change: transform, box-shadow;
+}
+
+.binder-turn-face {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform-style: preserve-3d;
+}
+
+.binder-turn-front {
+  transform: rotateY(0deg);
+}
+
+.binder-turn-back {
+  transform: rotateY(180deg);
+}
+
+.binder-full-turn-next {
+  transform-origin: left center;
+  animation: binder-full-page-next 1040ms cubic-bezier(0.42, 0, 0.58, 1)
+    both;
+}
+
+.binder-full-turn-previous {
+  transform-origin: right center;
+  animation: binder-full-page-previous 1040ms
+    cubic-bezier(0.42, 0, 0.58, 1) both;
+}
+
+.binder-mana-overlay {
+  animation: binder-mana-backdrop-in 650ms ease-out both;
+}
+
+.binder-mana-pie-stage,
+.binder-mana-analysis {
+  opacity: 0;
+}
+
+.binder-mana-pie-stage {
+  z-index: 1;
+}
+
+.binder-mana-analysis {
+  position: relative;
+  z-index: 2;
+}
+
+.binder-mana-phase-expanding .binder-mana-pie-stage {
+  animation: binder-mana-pie-close 650ms cubic-bezier(0.4, 0, 0.7, 0.2)
+    reverse both;
+}
+
+.binder-mana-phase-expanding .binder-mana-slice {
+  animation: binder-mana-slice-return 300ms ease-out
+    calc(120ms + var(--slice-index) * 36ms) reverse both;
+}
+
+.binder-mana-phase-expanding .binder-mana-analysis {
+  animation: binder-mana-analysis-out 160ms ease-in 500ms reverse both;
+}
+
+.binder-mana-phase-open .binder-mana-pie-stage {
+  visibility: hidden;
+}
+
+.binder-mana-phase-open .binder-mana-analysis {
+  opacity: 1;
+}
+
+.binder-mana-phase-closing .binder-mana-analysis {
+  animation: binder-mana-analysis-out 160ms ease-in both;
+}
+
+.binder-mana-phase-closing .binder-mana-pie-stage {
+  animation: binder-mana-pie-close 650ms cubic-bezier(0.4, 0, 0.7, 0.2) both;
+  visibility: visible;
+}
+
+.binder-mana-phase-closing .binder-mana-slice {
+  animation: binder-mana-slice-return 300ms ease-out
+    calc(120ms + var(--slice-index) * 36ms) both;
+}
+
+.binder-single-slide-out-next {
+  animation: binder-single-page-out-next 620ms cubic-bezier(0.32, 0.72, 0.2, 1)
+    both;
+}
+
+.binder-single-slide-in-next {
+  animation: binder-single-page-in-next 620ms cubic-bezier(0.32, 0.72, 0.2, 1)
+    both;
+}
+
+.binder-single-slide-out-previous {
+  animation: binder-single-page-out-previous 620ms
+    cubic-bezier(0.32, 0.72, 0.2, 1) both;
+}
+
+.binder-single-slide-in-previous {
+  animation: binder-single-page-in-previous 620ms
+    cubic-bezier(0.32, 0.72, 0.2, 1) both;
+}
+
+.binder-content-refresh-out {
+  animation: binder-content-fade-out 170ms ease-in both;
+}
+
+.binder-content-refresh-in {
+  animation: binder-content-fade-in 210ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .binder-inspection-backdrop,
+  .binder-lifted-card,
+  .binder-inspection-details,
+  .binder-inspection-closing,
+  .binder-inspection-closing .binder-lifted-card,
+  .binder-inspection-closing .binder-inspection-details {
+    animation: none;
+  }
+
+  .binder-turn-next,
+  .binder-turn-next > :last-child,
+  .binder-turn-previous,
+  .binder-turn-previous > :first-child {
+    animation: none;
+  }
+
+  .binder-full-turn-next,
+  .binder-full-turn-previous,
+  .binder-turn-face,
+  .binder-mana-overlay,
+  .binder-mana-pie-stage,
+  .binder-mana-slice,
+  .binder-mana-analysis {
+    animation: none;
+  }
+
+  .binder-single-slide-out-next,
+  .binder-single-slide-in-next,
+  .binder-single-slide-out-previous,
+  .binder-single-slide-in-previous {
+    animation: none;
+  }
+
+  .binder-content-refresh-out,
+  .binder-content-refresh-in {
+    animation: none;
+  }
+
+  .binder-train-wheel,
+  .binder-train-rod,
+  .binder-smoke-puff,
+  .binder-engine-window,
+  .binder-engine-node,
+  .binder-engine-cards,
+  .binder-engine-card {
+    animation: none;
+  }
+
+  .binder-intro-book,
+  .binder-intro-cover,
+  .binder-intro-cover h1,
+  .binder-intro-mana-symbol,
+  .binder-intro-pages {
+    animation: none;
+  }
+
+  .binder-intro-opening {
+    opacity: 0;
+  }
+
+  .binder-workspace-revealing .binder-spread,
+  .binder-workspace-revealing .binder-workspace-chrome {
+    animation: none;
+    opacity: 1;
+  }
+
+  .binder-mana-phase-open .binder-mana-analysis {
+    opacity: 1;
+  }
+}
+
 @media (min-width: 768px) {
   [aria-labelledby="synergy-dialog-title"] button:hover > div:first-child {
     overflow: visible;

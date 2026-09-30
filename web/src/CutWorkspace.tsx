@@ -25,6 +25,12 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import FoilIndicator from '@/components/FoilIndicator';
 import type { WorkspaceCard } from '@/DeckWorkspace';
+import BinderCutWorkspace, {
+  type BinderCardItem,
+  type BinderEngineGroup,
+  type BinderScoreDetail,
+  type BinderScoreMetric,
+} from '@/BinderCutWorkspace';
 import {
   ENGINE_SCORING_CONFIG,
   buildEngineSignals,
@@ -43,6 +49,7 @@ import {
   combinedProtectionRate,
   manualThemeProtectionRate,
   protectedOverallCutScore,
+  SYNERGY_ANALYSIS_SCHEMA_VERSION,
   SYNERGY_SCORING_CONFIG,
   signalPathsBetween,
   buildOptimizationComparisonReport,
@@ -1790,9 +1797,10 @@ export function creatureTypeSynergyRoles(card: WorkspaceCard, tag: string) {
       ? `${type.slice(0, -1)}ies`
       : `${type}s`;
   const typePattern = `(?:${escaped}|${plural})`;
-  const isMember =
-    subtypesOf(card).includes(type) ||
-    /\bchangeling\b|\bis every creature type\b/.test(text);
+  const isMember = subtypesOf(card).includes(type);
+  const grantsEveryType = text.includes(
+    'creatures you control are every creature type',
+  );
   const createsType = new RegExp(
     `\\bcreat(?:e|es)\\b[^.]*\\b${typePattern}\\b[^.]*\\bcreature tokens?\\b|\\bcreat(?:e|es)\\b[^.]*\\bcreature tokens?\\b[^.]*\\b${typePattern}\\b`,
   ).test(text);
@@ -1811,7 +1819,7 @@ export function creatureTypeSynergyRoles(card: WorkspaceCard, tag: string) {
     // A creature supplies its tribe, while cards that create or grant the type
     // are also tribal enablers. Scoring later scales this by the tribe's actual
     // prevalence so a small package cannot rival the deck's dominant engine.
-    enabler: isMember || createsType || grantsType,
+    enabler: isMember || createsType || grantsType || grantsEveryType,
     payoff,
   };
 }
@@ -2368,7 +2376,9 @@ export default function CutWorkspace({
       new Map(
         cards.map((card) => [keyOf(card), extractCardEffects(card)] as const),
       ),
-    [cards],
+    // Include the analysis schema so React Fast Refresh cannot preserve a
+    // stale effect map after detector changes during development.
+    [cards, SYNERGY_ANALYSIS_SCHEMA_VERSION],
   );
   const structuredSignalsByCard = useMemo(
     () =>
@@ -2448,26 +2458,26 @@ export default function CutWorkspace({
           const key = keyOf(card);
           const signals = structuredSignalsByCard.get(key)!;
           const families = new Set(detectedEnginesByCard.get(key) ?? []);
-          engineDefinitions().forEach((definition) => {
-            const isSupport = engineParticipation(
-              signals,
-              definition.id,
-            ).support;
+          activeEngineIds.forEach((engineId) => {
+            const definition = engineDefinitionForId(engineId);
+            if (!definition) return;
+            const participation = engineParticipation(signals, engineId);
+            const isSupport = participation.support;
             const isSpecialized =
-              engineSpecializationIsAvailable(
-                definition.id,
-                isIgnoredSynergy,
-              ) && engineSpecializationParticipation(signals, definition.id);
+              engineSpecializationIsAvailable(engineId, isIgnoredSynergy) &&
+              engineSpecializationParticipation(signals, engineId);
             if (
-              !activeEngineIds.has(definition.id) ||
-              (!isSupport && !isSpecialized)
+              !participation.enabler &&
+              !participation.payoff &&
+              !isSupport &&
+              !isSpecialized
             )
               return;
             if (!definition.allowParentCoexistence)
               definition.parentEngineIds?.forEach((parent) =>
                 families.delete(parent),
               );
-            families.add(definition.id);
+            families.add(engineId);
           });
           return [key, dedupeEngineFamilies([...families])] as const;
         }),
@@ -3260,6 +3270,7 @@ export default function CutWorkspace({
         );
       };
       const supportWeightFor = (family: string) => {
+        if (family.startsWith('engine:type:')) return 0.5;
         if (family === 'engine:artifact-animation') return 0.75;
         if (family === 'engine:clue-animation') return 0.75;
         if (family === 'engine:combat-damage') return 0.65;
@@ -4708,7 +4719,64 @@ export default function CutWorkspace({
       </div>
     );
   }
+  const binderItems: BinderCardItem[] = allRanked.map((item) => ({
+    card: item.card,
+    scores: {
+      all: item.all,
+      curve: item.curve,
+      synergy: item.synergy,
+      price: item.price,
+      popularity: item.popularity,
+    },
+  }));
+  const binderScoreDetails: BinderScoreDetail[] = focusedScoreCards.map(
+    (detail) => ({
+      value: detail.value as BinderScoreMetric,
+      label: detail.label,
+      rows: detail.rows,
+      summary: detail.summary,
+    }),
+  );
+  const binderEngines: BinderEngineGroup[] = discoveredSynergies
+    .filter(
+      (group) =>
+        group.tag.startsWith('engine:') &&
+        !group.ignored &&
+        group.cards.length > 0,
+    )
+    .map((group) => ({
+      id: group.tag,
+      label: displayTag(group.tag),
+      cards: group.cards,
+    }));
   return (
+    <BinderCutWorkspace
+      deckName={deckName}
+      formatLabel={formatLabel}
+      commander={commander}
+      commanderCard={cards.find((card) => card.name === commander)}
+      items={binderItems}
+      focusedKey={focusedKey}
+      focusedScores={binderScoreDetails}
+      focusedEffects={focusedLiteralEffects.map((effect) => effect.label)}
+      focusedThemes={focusedEngineFamilies.map(displayTag)}
+      focusedRoles={focusedRoleTags.map(displayTag)}
+      selectedCuts={selectedCuts}
+      keptCards={keptCards}
+      selectedCount={selectedCount}
+      cutsNeeded={cutsNeeded}
+      budget={budget}
+      deckPrice={workingDeckPrice}
+      engines={binderEngines}
+      onFocus={setFocusedKey}
+      onKeep={markKeep}
+      onCut={markCut}
+      onUndecided={resetDecision}
+      onBudgetChange={setBudget}
+      onBack={onBack}
+    />
+  );
+  if (false) return (
     <main className="min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-30 border-b border-white/8 bg-[#0b0d0c]/92 backdrop-blur-xl">
         <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-5 py-4 sm:px-8">
