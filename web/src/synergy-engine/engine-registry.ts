@@ -453,7 +453,7 @@ export function engineDefinitionForId(id: string) {
     const type = id.slice('engine:type:'.length);
     return {
       id,
-      label: `${type.replace(/\b\w/g, (letter) => letter.toUpperCase())} Typal`,
+      label: `${type.replace(/\b\w/g, (letter) => letter.toUpperCase())} Tribal`,
       desiredEnablersPerPayoff: 3,
       legacyTags: [`type: ${type}`],
       enablerSignals: [`type:${type}-present`, 'all-creature-types-enabled'],

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   ArrowLeft,
+  Ban,
+  Book,
   ChevronLeft,
   ChevronRight,
   Crown,
@@ -41,7 +43,12 @@ export type BinderCardItem = {
 export type BinderEngineGroup = {
   id: string;
   label: string;
+  ignored: boolean;
+  boosted: boolean;
   cards: WorkspaceCard[];
+  enablers: WorkspaceCard[];
+  payoffs: WorkspaceCard[];
+  support: WorkspaceCard[];
 };
 
 type Props = {
@@ -67,6 +74,8 @@ type Props = {
   onCut: (card: WorkspaceCard) => void;
   onUndecided: (card: WorkspaceCard) => void;
   onBudgetChange: (budget: number | null) => void;
+  onToggleThemeIgnored: (id: string) => void;
+  onToggleThemeBoosted: (id: string) => void;
   onBack: () => void;
 };
 
@@ -108,25 +117,16 @@ function keyOf(card: WorkspaceCard) {
   return card.key ?? card.name;
 }
 
-function EngineGlyph({ className = '' }: { className?: string }) {
+function ThemeVialGlyph({ className = '' }: { className?: string }) {
   return (
-    <svg viewBox="0 0 32 32" className={className} aria-hidden="true">
-      <g transform="translate(32 0) scale(-1 1)">
-      <g className="binder-train-smoke" fill="currentColor">
-        <circle className="binder-smoke-puff binder-smoke-puff-one" cx="9" cy="4.5" r="1.8" />
-        <circle className="binder-smoke-puff binder-smoke-puff-two" cx="12" cy="2.5" r="1.35" />
-      </g>
-      <path d="M6.7 13V9.3H5.4V7.1h7.1v2.2h-1.3V13z" fill="currentColor" />
-      <path d="M5.7 6h6.7l-1.2 2H6.9z" fill="currentColor" />
-      <path d="M15.1 13v-2h1V9.8h3V11h1v2z" fill="currentColor" />
-      <path d="M7.5 12.5h13.8a4.5 4.5 0 0 1 4.5 4.5v5H7.5a4.75 4.75 0 0 1 0-9.5z" fill="currentColor" />
-      <path d="M20 8.2h8V22h-8zm-1.1-1.8h10.2v2.2H18.9z" fill="currentColor" />
-      <rect x="22" y="10.4" width="4" height="4.2" rx=".45" fill="#111614" />
-      <path d="M7.2 18.3 1.7 24h7.1L11 21.7zM2.2 17.7h4v2h-4z" fill="currentColor" />
-      <path d="M5 21.5h23.8V24H5z" fill="currentColor" />
-      <g transform="translate(10 24)"><g className="binder-train-wheel"><circle r="4" fill="currentColor" /><circle r="1.35" fill="#111614" /><path d="M0-3.15v6.3M-3.15 0h6.3M-2.2-2.2l4.4 4.4M2.2-2.2l-4.4 4.4" stroke="#111614" strokeWidth=".7" /></g></g>
-      <g transform="translate(23 24)"><g className="binder-train-wheel"><circle r="4" fill="currentColor" /><circle r="1.35" fill="#111614" /><path d="M0-3.15v6.3M-3.15 0h6.3M-2.2-2.2l4.4 4.4M2.2-2.2l-4.4 4.4" stroke="#111614" strokeWidth=".7" /></g></g>
-      <path className="binder-train-rod" d="M10 24h13" fill="none" stroke="#111614" strokeWidth="1.45" strokeLinecap="round" />
+    <svg viewBox="0 0 32 32" className={`overflow-visible ${className}`} aria-hidden="true">
+      <path d="M11 3.5h10M12.5 4v7.2L6.8 22.4A4.2 4.2 0 0 0 10.5 28h11a4.2 4.2 0 0 0 3.7-5.6l-5.7-11.2V4" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" />
+      <path className="binder-vial-liquid" d="M9.2 21.2h13.6l1.2 2.4a2.55 2.55 0 0 1-2.5 3.1h-11a2.55 2.55 0 0 1-2.5-3.1z" fill="currentColor" opacity=".72" />
+      <path d="M10.1 19.4c2.1-1.6 3.8 1.1 5.9-.2 2.2-1.4 3.8.8 5.9-.2l.9 2.2H9.2z" fill="currentColor" opacity=".48" />
+      <g className="binder-vial-bubbles" fill="currentColor">
+        <circle className="binder-vial-bubble binder-vial-bubble-one" cx="13" cy="21" r="1.25" />
+        <circle className="binder-vial-bubble binder-vial-bubble-two" cx="18.5" cy="19.5" r="1" />
+        <circle className="binder-vial-bubble binder-vial-bubble-three" cx="16" cy="17" r=".8" />
       </g>
     </svg>
   );
@@ -187,6 +187,8 @@ export default function BinderCutWorkspace({
   onCut,
   onUndecided,
   onBudgetChange,
+  onToggleThemeIgnored,
+  onToggleThemeBoosted,
   onBack,
 }: Props) {
   const [page, setPage] = useState(0);
@@ -209,9 +211,12 @@ export default function BinderCutWorkspace({
   const [isClosingInspection, setIsClosingInspection] = useState(false);
   const [budgetDraft, setBudgetDraft] = useState<number | null>(budget);
   const [engineOverviewOpen, setEngineOverviewOpen] = useState(false);
+  const [themeTransition, setThemeTransition] = useState<'idle' | 'closing' | 'shifting' | 'returning' | 'reopening'>('idle');
   const [selectedEngineId, setSelectedEngineId] = useState('');
   const [introPhase, setIntroPhase] = useState<'cover' | 'shifting' | 'opening' | 'done'>('cover');
   const refreshTimers = useRef<number[]>([]);
+  const introTimers = useRef<number[]>([]);
+  const themeTimers = useRef<number[]>([]);
   const [binderLayout, setBinderLayout] = useState({
     columns: 4,
     rows: 4,
@@ -229,15 +234,57 @@ export default function BinderCutWorkspace({
   } as CSSProperties;
 
   useEffect(() => {
-    const shiftTimer = window.setTimeout(() => setIntroPhase('shifting'), 620);
-    const openTimer = window.setTimeout(() => setIntroPhase('opening'), 1220);
-    const finishTimer = window.setTimeout(() => setIntroPhase('done'), 2520);
+    startBinderIntro(620);
     return () => {
-      window.clearTimeout(shiftTimer);
-      window.clearTimeout(openTimer);
-      window.clearTimeout(finishTimer);
+      introTimers.current.forEach((timer) => window.clearTimeout(timer));
+      introTimers.current = [];
+      themeTimers.current.forEach((timer) => window.clearTimeout(timer));
+      themeTimers.current = [];
     };
   }, []);
+
+  function startBinderIntro(coverPause = 80) {
+    introTimers.current.forEach((timer) => window.clearTimeout(timer));
+    introTimers.current = [];
+    setIntroPhase('cover');
+    introTimers.current.push(
+      window.setTimeout(() => setIntroPhase('shifting'), coverPause),
+      window.setTimeout(() => setIntroPhase('opening'), coverPause + 600),
+      window.setTimeout(() => setIntroPhase('done'), coverPause + 1900),
+    );
+  }
+
+  function returnToBinderCover() {
+    introTimers.current.forEach((timer) => window.clearTimeout(timer));
+    introTimers.current = [];
+    setIntroPhase('cover');
+  }
+
+  function openThemeBrowser() {
+    if (themeTransition !== 'idle' || engineOverviewOpen) return;
+    themeTimers.current.forEach((timer) => window.clearTimeout(timer));
+    setThemeTransition('closing');
+    themeTimers.current = [
+      window.setTimeout(() => setThemeTransition('shifting'), 1080),
+      window.setTimeout(() => setEngineOverviewOpen(true), 1680),
+      window.setTimeout(() => {
+        setThemeTransition('idle');
+      }, 1740),
+    ];
+  }
+
+  function closeThemeBrowser() {
+    if (!engineOverviewOpen || themeTransition !== 'idle') return;
+    themeTimers.current.forEach((timer) => window.clearTimeout(timer));
+    setThemeTransition('returning');
+    themeTimers.current = [
+      window.setTimeout(() => {
+        setEngineOverviewOpen(false);
+        setThemeTransition('reopening');
+      }, 640),
+      window.setTimeout(() => setThemeTransition('idle'), 1740),
+    ];
+  }
 
   const statusOf = (card: WorkspaceCard) =>
     selectedCuts.has(keyOf(card))
@@ -430,10 +477,12 @@ export default function BinderCutWorkspace({
       const height = window.innerHeight;
       if (width >= 1280 && height >= 760) {
         setBinderLayout({ columns: 4, rows: 4, sheets: 2 });
-      } else if (width >= 900 && height >= 650) {
+      } else if (width >= 900 && height >= 680) {
         setBinderLayout({ columns: 4, rows: 3, sheets: 2 });
-      } else if (width >= 700) {
+      } else if (width >= 700 && height >= 700) {
         setBinderLayout({ columns: 3, rows: 3, sheets: 2 });
+      } else if (width >= 700) {
+        setBinderLayout({ columns: 3, rows: 2, sheets: 2 });
       } else if (height >= 680) {
         setBinderLayout({ columns: 3, rows: 3, sheets: 1 });
       } else {
@@ -490,8 +539,10 @@ export default function BinderCutWorkspace({
   }
 
   function cycleScore() {
-    const index = SCORE_ORDER.indexOf(scoreMetric);
-    setScoreMetric(SCORE_ORDER[(index + 1) % SCORE_ORDER.length]);
+    setScoreMetric((current) => {
+      const index = SCORE_ORDER.indexOf(current);
+      return SCORE_ORDER[(index + 1) % SCORE_ORDER.length];
+    });
   }
 
   function openManaAnalysis() {
@@ -562,11 +613,13 @@ export default function BinderCutWorkspace({
       >
         <span className="sr-only">Slot {slot + 1}</span>
         {card.cardData?.imageUri ? (
-          <img
-            src={card.cardData.imageUri}
-            alt={card.name}
-            className="relative z-[1] block max-h-full max-w-full rounded-[4.75%] object-contain shadow-md [clip-path:inset(0_round_4.75%)] transition duration-200 ease-out group-hover:-translate-y-0.5 group-hover:brightness-110 group-hover:shadow-xl group-focus-visible:-translate-y-0.5 group-focus-visible:brightness-110"
-          />
+          <span className="absolute inset-1.5 flex min-h-0 min-w-0 items-center justify-center">
+            <img
+              src={card.cardData.imageUri}
+              alt={card.name}
+              className="relative z-[1] block h-auto max-h-full w-auto max-w-full rounded-[4.75%] object-contain shadow-md [clip-path:inset(0_round_4.75%)] transition duration-200 ease-out group-hover:-translate-y-0.5 group-hover:brightness-110 group-hover:shadow-xl group-focus-visible:-translate-y-0.5 group-focus-visible:brightness-110"
+            />
+          </span>
         ) : (
           <span className="grid aspect-[63/88] h-full place-items-center rounded bg-black/25 px-1 text-center text-[10px] text-zinc-500">
             {card.name}
@@ -600,7 +653,7 @@ export default function BinderCutWorkspace({
 
   return (
     <main
-      className={`relative grid h-dvh min-h-[620px] overflow-hidden bg-[#0c100f] text-zinc-100 ${introPhase !== 'done' ? 'binder-workspace-intro' : ''} ${introPhase === 'opening' ? 'binder-workspace-revealing' : ''}`}
+      className={`relative grid h-dvh min-h-[620px] overflow-hidden bg-[#0c100f] text-zinc-100 ${introPhase !== 'done' ? 'binder-workspace-intro' : ''} ${introPhase === 'opening' ? 'binder-workspace-revealing' : ''} ${themeTransition !== 'idle' ? 'binder-theme-leaving' : ''}`}
       style={themeStyle}
     >
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_-15%,var(--binder-glow),transparent_48%)]" />
@@ -646,13 +699,13 @@ export default function BinderCutWorkspace({
               type="button"
               onClick={() => {
                 setSelectedEngineId('');
-                setEngineOverviewOpen(true);
+                openThemeBrowser();
               }}
               className="binder-engine-trigger group grid size-9 place-items-center rounded-full text-zinc-500 transition hover:bg-white/5 hover:text-[var(--binder-accent)]"
-              aria-label="Open deck engine overview"
-              title="Deck engines"
+              aria-label="Open deck themes"
+              title="Deck themes"
             >
-              <EngineGlyph className="size-6" />
+              <ThemeVialGlyph className="size-6" />
             </button>
           </div>
           <div className="relative min-h-0">
@@ -672,8 +725,8 @@ export default function BinderCutWorkspace({
               </section>
             </div>}
             <div key={`${page}-${cardsPerSpread}`} inert={isTurningPage || refreshPhase!=='idle' ? true : undefined} aria-busy={isTurningPage || refreshPhase!=='idle'} className={`binder-spread grid h-full min-h-0 drop-shadow-[0_18px_25px_rgba(0,0,0,.34)] ${isTurningPage||refreshPhase!=='idle'?'pointer-events-none':''} ${!isTurningPage&&refreshPhase!=='idle'?`binder-content-refresh-${refreshPhase}`:''} ${binderLayout.sheets === 2 ? 'grid-cols-2' : `grid-cols-1 ${isTurningPage?`binder-single-slide-out-${pageDirection}`:''}`}`}>
-              <div className={`grid min-h-0 gap-3 bg-[var(--binder-page)] p-3 sm:p-4 ${binderLayout.sheets===1?'overflow-hidden rounded-2xl shadow-[inset_0_0_22px_rgba(0,0,0,.22)]':'rounded-l-2xl rounded-r-sm shadow-[inset_-14px_0_22px_rgba(0,0,0,.22)]'}`} style={{gridTemplateColumns:`repeat(${binderLayout.columns},minmax(0,1fr))`,gridTemplateRows:`repeat(${binderLayout.rows},minmax(0,1fr))`}}>{displayedLeftPage.map(renderSlot)}</div>
-              {binderLayout.sheets === 2 && <div className="grid min-h-0 gap-3 rounded-l-sm rounded-r-2xl border-l border-black/30 bg-[var(--binder-page)] p-3 shadow-[inset_14px_0_22px_rgba(0,0,0,.22)] sm:p-4" style={{gridTemplateColumns:`repeat(${binderLayout.columns},minmax(0,1fr))`,gridTemplateRows:`repeat(${binderLayout.rows},minmax(0,1fr))`}}>{displayedRightPage.map((item,index)=>renderSlot(item,index+cardsPerSheet))}</div>}
+              <div className={`grid min-h-0 gap-3 overflow-hidden bg-[var(--binder-page)] p-3 sm:p-4 ${binderLayout.sheets===1?'rounded-2xl shadow-[inset_0_0_22px_rgba(0,0,0,.22)]':'rounded-l-2xl rounded-r-sm shadow-[inset_-14px_0_22px_rgba(0,0,0,.22)]'}`} style={{gridTemplateColumns:`repeat(${binderLayout.columns},minmax(0,1fr))`,gridTemplateRows:`repeat(${binderLayout.rows},minmax(0,1fr))`}}>{displayedLeftPage.map(renderSlot)}</div>
+              {binderLayout.sheets === 2 && <div className="grid min-h-0 gap-3 overflow-hidden rounded-l-sm rounded-r-2xl border-l border-black/30 bg-[var(--binder-page)] p-3 shadow-[inset_14px_0_22px_rgba(0,0,0,.22)] sm:p-4" style={{gridTemplateColumns:`repeat(${binderLayout.columns},minmax(0,1fr))`,gridTemplateRows:`repeat(${binderLayout.rows},minmax(0,1fr))`}}>{displayedRightPage.map((item,index)=>renderSlot(item,index+cardsPerSheet))}</div>}
             </div>
             {isTurningPage && binderLayout.sheets === 2 && <div className={`binder-turning-sheet binder-full-turn-${pageDirection} pointer-events-none absolute inset-y-0 z-30 w-1/2 ${pageDirection==='next'?'right-0':'left-0'}`}>
               <div className={`binder-turn-face binder-turn-front absolute inset-0 grid gap-3 bg-[var(--binder-page)] p-3 sm:p-4 ${pageDirection==='next'?'rounded-r-2xl shadow-[inset_14px_0_22px_rgba(0,0,0,.22)]':'rounded-l-2xl shadow-[inset_-14px_0_22px_rgba(0,0,0,.22)]'}`} style={{gridTemplateColumns:`repeat(${binderLayout.columns},minmax(0,1fr))`,gridTemplateRows:`repeat(${binderLayout.rows},minmax(0,1fr))`}}>{turningFrontItems.map(renderSlot)}</div>
@@ -690,11 +743,28 @@ export default function BinderCutWorkspace({
         </section>
 
         <footer className="binder-workspace-chrome grid grid-cols-[1fr_auto_1fr] items-center border-t border-white/8 px-4 text-xs text-zinc-500 sm:px-6">
-          <button type="button" disabled={page===0||isTurningPage} onClick={()=>changePage('previous')} className="flex items-center gap-1 justify-self-start disabled:opacity-25"><ChevronLeft className="size-4" />Previous</button>
+          <div className="flex items-center gap-1 justify-self-start"><button type="button" disabled={page===0||isTurningPage} onClick={()=>changePage('previous')} className="flex items-center gap-1 disabled:opacity-25"><ChevronLeft className="size-4" />Previous</button><button type="button" onClick={returnToBinderCover} disabled={isTurningPage} className="ml-1 grid size-8 place-items-center rounded-full text-zinc-600 transition hover:bg-white/5 hover:text-zinc-200 disabled:opacity-25" aria-label="Return to closed binder cover" title="Close binder"><Book className="size-4" /></button></div>
           <span>{presentedItems.length ? `${page*cardsPerSpread+1}–${Math.min((page+1)*cardsPerSpread,presentedItems.length)} of ${presentedItems.length}` : 'No cards in this filter'}</span>
           <button type="button" disabled={page>=pageCount-1||isTurningPage} onClick={()=>changePage('next')} className="flex items-center gap-1 justify-self-end disabled:opacity-25">Next<ChevronRight className="size-4" /></button>
         </footer>
       </div>
+
+      {themeTransition !== 'idle' && (
+        <div className={`binder-theme-transition binder-theme-${themeTransition} fixed inset-0 z-[90] overflow-hidden`} aria-label="Closing binder and opening deck themes">
+          <div className="binder-theme-curtain absolute inset-0 bg-[#090d0c]" />
+          <div className="binder-theme-book absolute bottom-[54px] top-[96px] w-[calc((100vw-40px)/2)] [perspective:1800px]">
+            <div className="binder-theme-stationary absolute inset-0 grid min-h-0 gap-3 overflow-hidden rounded-r-2xl bg-[var(--binder-page)] p-3 shadow-[0_28px_80px_rgba(0,0,0,.72),inset_14px_0_22px_rgba(0,0,0,.22)] sm:p-4" style={{gridTemplateColumns:`repeat(${binderLayout.columns},minmax(0,1fr))`,gridTemplateRows:`repeat(${binderLayout.rows},minmax(0,1fr))`}}>{(binderLayout.sheets===2?rightPage:pageItems).map((item,index)=>renderSlot(item,index+cardsPerSheet))}</div>
+            <div className="binder-theme-closing-cover absolute inset-0 origin-left">
+              <div className="binder-intro-face binder-theme-cover-front absolute inset-0 grid place-items-center overflow-hidden rounded-[1.6rem] border border-white/10 bg-[var(--binder-page-deep)] shadow-[0_30px_85px_rgba(0,0,0,.75),inset_-22px_0_38px_rgba(0,0,0,.3)]">
+                <div className="absolute inset-3 rounded-[1.2rem] border border-white/[.07]" />
+                <div className="absolute inset-y-0 left-7 w-px bg-white/[.08] shadow-[4px_0_10px_rgba(0,0,0,.55)]" />
+                <div className="relative max-w-[76%] text-center"><p className="text-[9px] font-semibold uppercase tracking-[.34em] text-white/35">Deck binder</p><h2 className="mt-4 font-heading text-[clamp(1.7rem,4vw,4rem)] font-semibold tracking-[-.04em] text-white/90">{deckName}</h2><div className="mt-6 flex justify-center gap-2.5">{(commanderIdentity.length?commanderIdentity:['C']).map((color)=><span key={color} className="grid size-10 place-items-center rounded-full border border-black/40 font-heading text-base font-bold text-black/70 shadow-[inset_0_2px_3px_rgba(255,255,255,.45)]" style={{background:COLOR_HEX[color]??COLOR_HEX.C}}>{color}</span>)}</div></div>
+              </div>
+              <div className="binder-intro-face binder-theme-cover-back absolute inset-0 grid min-h-0 gap-3 rounded-l-2xl bg-[var(--binder-page)] p-3 shadow-[inset_-14px_0_22px_rgba(0,0,0,.22)] sm:p-4" style={{gridTemplateColumns:`repeat(${binderLayout.columns},minmax(0,1fr))`,gridTemplateRows:`repeat(${binderLayout.rows},minmax(0,1fr))`}}>{(binderLayout.sheets===2?leftPage:pageItems).map(renderSlot)}</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {introPhase !== 'done' && (
         <div className={`binder-intro-overlay binder-intro-${introPhase} fixed inset-0 z-[100] grid place-items-center overflow-hidden`} aria-label={`Opening ${deckName} binder`}>
@@ -702,7 +772,7 @@ export default function BinderCutWorkspace({
           <div className="binder-intro-book absolute bottom-[54px] top-[96px] w-[calc((100vw-40px)/2)] [perspective:1800px]">
             <div className="binder-intro-pages pointer-events-none absolute inset-0 grid min-h-0 gap-3 overflow-hidden rounded-r-2xl bg-[var(--binder-page)] p-3 shadow-[0_28px_80px_rgba(0,0,0,.72),inset_14px_0_22px_rgba(0,0,0,.22)] sm:p-4" style={{gridTemplateColumns:`repeat(${binderLayout.columns},minmax(0,1fr))`,gridTemplateRows:`repeat(${binderLayout.rows},minmax(0,1fr))`}}>{(binderLayout.sheets===2?rightPage:pageItems).map((item,index)=>renderSlot(item,index+cardsPerSheet))}</div>
             <div className="binder-intro-cover pointer-events-none absolute inset-0 origin-left">
-              <div className="binder-intro-face binder-intro-cover-front absolute inset-0 grid place-items-center overflow-hidden rounded-[1.6rem] border border-white/10 bg-[var(--binder-page-deep)] shadow-[0_30px_85px_rgba(0,0,0,.75),inset_-22px_0_38px_rgba(0,0,0,.3)]">
+              <button type="button" disabled={introPhase!=='cover'} onClick={()=>startBinderIntro(80)} className="binder-intro-face binder-intro-cover-front pointer-events-auto absolute inset-0 grid place-items-center overflow-hidden rounded-[1.6rem] border border-white/10 bg-[var(--binder-page-deep)] shadow-[0_30px_85px_rgba(0,0,0,.75),inset_-22px_0_38px_rgba(0,0,0,.3)] disabled:pointer-events-none" aria-label={`Open ${deckName} binder`}>
                 <div className="absolute inset-3 rounded-[1.2rem] border border-white/[.07]" />
                 <div className="absolute inset-y-0 left-7 w-px bg-white/[.08] shadow-[4px_0_10px_rgba(0,0,0,.55)]" />
                 <div className="relative max-w-[76%] text-center">
@@ -713,7 +783,7 @@ export default function BinderCutWorkspace({
                   </div>
                 </div>
                 <span className="absolute bottom-5 left-1/2 h-1 w-24 -translate-x-1/2 rounded-full bg-[var(--binder-accent)]/45 shadow-[0_0_16px_var(--binder-glow)]" />
-              </div>
+              </button>
               <div className="binder-intro-face binder-intro-cover-back absolute inset-0 grid min-h-0 gap-3 rounded-l-2xl bg-[var(--binder-page)] p-3 shadow-[inset_-14px_0_22px_rgba(0,0,0,.22)] sm:p-4" style={{gridTemplateColumns:`repeat(${binderLayout.columns},minmax(0,1fr))`,gridTemplateRows:`repeat(${binderLayout.rows},minmax(0,1fr))`}}>{(binderLayout.sheets===2?leftPage:pageItems).map(renderSlot)}</div>
             </div>
           </div>
@@ -721,44 +791,55 @@ export default function BinderCutWorkspace({
       )}
 
       {engineOverviewOpen && (
-        <section className="binder-engine-overlay fixed inset-0 z-[80] grid place-items-center bg-black/42 p-4 backdrop-blur-md" aria-label="Deck engine overview">
-          <div className="binder-engine-window flex max-h-[88vh] w-[min(880px,96vw)] flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#111614]/96 shadow-[0_30px_90px_rgba(0,0,0,.72)]">
-            <header className="flex items-center justify-between px-5 py-4 sm:px-7">
+        <section className={`binder-theme-page fixed inset-0 z-[80] overflow-hidden bg-[#090d0c] text-zinc-100 ${themeTransition==='returning'?'binder-theme-page-exit':''}`} aria-label="Deck themes">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_72%_35%,var(--binder-glow),transparent_46%)]" />
+          <button type="button" onClick={closeThemeBrowser} className="group absolute inset-y-8 left-5 hidden w-24 overflow-hidden rounded-2xl border border-white/10 bg-[var(--binder-page-deep)] shadow-[0_24px_60px_rgba(0,0,0,.55)] transition hover:-translate-y-1 hover:border-white/20 md:block" aria-label="Return to binder"><span className="absolute inset-y-0 left-4 w-px bg-white/10" /><Book className="absolute bottom-6 left-1/2 size-5 -translate-x-1/2 text-[var(--binder-accent)]" /><span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 -rotate-90 whitespace-nowrap text-[9px] font-semibold uppercase tracking-[.25em] text-white/35">Return to binder</span></button>
+          <div className="binder-engine-window relative ml-0 flex h-dvh flex-col overflow-hidden md:ml-32">
+            <header className="flex items-center justify-between border-b border-white/[.06] px-5 py-4 sm:px-8">
               <div className="flex items-center gap-3">
-                <span className="binder-engine-running grid size-10 place-items-center rounded-full bg-white/[.04] text-[var(--binder-accent)]"><EngineGlyph className="size-7" /></span>
-                <div><h2 className="font-heading text-lg font-semibold text-white">Deck engines</h2><p className="text-[10px] text-zinc-500">Choose an engine to reveal its moving pieces</p></div>
+                <span className="binder-engine-running grid size-10 place-items-center rounded-full bg-white/[.04] text-[var(--binder-accent)]"><ThemeVialGlyph className="size-7" /></span>
+                <div><h2 className="font-heading text-lg font-semibold text-white">Deck Themes</h2><p className="text-[10px] text-zinc-500">Choose a theme to see the cards brewing it</p></div>
               </div>
-              <button type="button" onClick={()=>setEngineOverviewOpen(false)} className="grid size-9 place-items-center rounded-full text-zinc-500 transition hover:bg-white/5 hover:text-white" aria-label="Close engine overview"><X className="size-4" /></button>
+              <button type="button" onClick={closeThemeBrowser} className="grid size-9 place-items-center rounded-full text-zinc-500 transition hover:bg-white/5 hover:text-white" aria-label="Return to binder"><ArrowLeft className="size-4" /></button>
             </header>
 
-            <div className="min-h-0 overflow-y-auto px-5 pb-5 sm:px-7 sm:pb-7">
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-6 sm:px-8 sm:py-8">
               {engines.length ? (
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                   {engines.map((engine,index) => {
                     const active = selectedEngine?.id === engine.id;
-                    return <button key={engine.id} type="button" onClick={()=>setSelectedEngineId(active?'':engine.id)} aria-expanded={active} className={`binder-engine-node group relative min-h-24 overflow-hidden rounded-2xl border p-3 text-left transition ${active?'border-[var(--binder-accent)]/60 bg-white/[.07]':'border-white/[.07] bg-black/15 hover:border-white/15 hover:bg-white/[.04]'}`} style={{'--engine-index':index} as CSSProperties}>
-                      <span className="absolute -right-3 -top-3 text-white/[.035]"><EngineGlyph className="size-20" /></span>
-                      <span className={`relative grid size-7 place-items-center rounded-full ${active?'text-[var(--binder-accent)]':'text-zinc-600 group-hover:text-zinc-400'}`}><EngineGlyph className="size-5" /></span>
-                      <strong className="relative mt-3 block text-xs font-medium text-zinc-200">{engine.label}</strong>
-                      <span className="relative mt-1 block text-[9px] uppercase tracking-[.12em] text-zinc-600">{engine.cards.reduce((sum,card)=>sum+card.quantity,0)} cards</span>
+                    const stateClass = engine.ignored
+                      ? 'border-red-300/20 bg-red-950/10 opacity-55 saturate-[.35] hover:-translate-y-1 hover:border-red-300/35 hover:opacity-80'
+                      : engine.boosted
+                        ? 'border-amber-300/35 bg-amber-300/[.055] shadow-[0_0_24px_rgba(252,211,77,.09),inset_0_0_20px_rgba(252,211,77,.025)] hover:-translate-y-1 hover:border-amber-200/55'
+                        : active
+                          ? 'border-[var(--binder-accent)]/60 bg-white/[.07] shadow-[0_0_28px_var(--binder-glow)]'
+                          : 'border-white/[.07] bg-black/15 hover:-translate-y-1 hover:border-white/15 hover:bg-white/[.04]';
+                    return <button key={engine.id} type="button" onClick={()=>setSelectedEngineId(engine.id)} aria-expanded={active} className={`binder-engine-node group relative min-h-32 overflow-hidden rounded-2xl border p-4 text-left transition ${stateClass}`} style={{'--engine-index':index} as CSSProperties}>
+                      <span className={`absolute -right-3 -top-3 ${engine.ignored?'text-red-200/[.035]':engine.boosted?'text-amber-200/[.07]':'text-white/[.035]'}`}><ThemeVialGlyph className="size-20" /></span>
+                      {(engine.ignored||engine.boosted)&&<span className={`absolute right-3 top-3 flex items-center gap-1 rounded-full border px-2 py-1 text-[8px] font-semibold uppercase tracking-[.1em] ${engine.ignored?'border-red-300/20 bg-red-950/60 text-red-200':'border-amber-300/25 bg-amber-950/50 text-amber-200'}`}>{engine.ignored?<Ban className="size-2.5" />:<Sparkles className="size-2.5" />}{engine.ignored?'Ignored':'Promoted'}</span>}
+                      <span className={`relative grid size-7 place-items-center rounded-full ${engine.ignored?'text-red-300/55':engine.boosted?'text-amber-300':active?'text-[var(--binder-accent)]':'text-zinc-600 group-hover:text-zinc-400'}`}><ThemeVialGlyph className="size-5" /></span>
+                      <strong className={`relative mt-3 block text-xs font-medium ${engine.ignored?'text-zinc-500 line-through decoration-red-300/40':engine.boosted?'text-amber-100':'text-zinc-200'}`}>{engine.label}</strong>
+                      <span className={`relative mt-1 block text-[9px] uppercase tracking-[.12em] ${engine.boosted?'text-amber-300/50':'text-zinc-600'}`}>{engine.cards.reduce((sum,card)=>sum+card.quantity,0)} cards</span>
                     </button>;
                   })}
                 </div>
-              ) : <div className="grid min-h-52 place-items-center text-center"><div><EngineGlyph className="mx-auto size-10 text-zinc-700" /><p className="mt-3 text-sm text-zinc-400">No active engines detected</p><p className="mt-1 text-xs text-zinc-600">This deck may rely more on standalone roles than connected engines.</p></div></div>}
-
-              {selectedEngine && <section className="binder-engine-cards mt-5 border-t border-white/8 pt-5" aria-label={`${selectedEngine.label} cards`}>
-                <div className="mb-3 flex items-end justify-between gap-4"><div><p className="font-heading text-base font-semibold text-white">{selectedEngine.label}</p><p className="text-[10px] text-zinc-500">Cards that enable, reward, or support this engine</p></div><span className="font-mono text-[10px] text-zinc-600">{selectedEngine.cards.length} unique</span></div>
-                <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 lg:grid-cols-8">
-                  {selectedEngine.cards.map((card,index)=><button key={keyOf(card)} type="button" onClick={()=>{setEngineOverviewOpen(false);onFocus(keyOf(card));}} className="binder-engine-card group relative aspect-[63/88] overflow-hidden rounded-[7%] bg-black/30 shadow-[0_8px_18px_rgba(0,0,0,.35)] transition hover:-translate-y-1 hover:shadow-[0_14px_26px_rgba(0,0,0,.55)]" style={{'--card-index':index} as CSSProperties} aria-label={`Inspect ${card.name}`} title={card.name}>{card.cardData?.imageUri?<img src={card.cardData.imageUri} alt="" className="h-full w-full object-cover" />:<span className="grid h-full place-items-center p-1 text-[9px] text-zinc-500">{card.name}</span>}{card.quantity>1&&<span className="absolute bottom-1 right-1 rounded-full bg-black/75 px-1.5 py-0.5 font-mono text-[9px] text-white">×{card.quantity}</span>}</button>)}
-                </div>
-              </section>}
+              ) : <div className="grid min-h-52 place-items-center text-center"><div><ThemeVialGlyph className="mx-auto size-10 text-zinc-700" /><p className="mt-3 text-sm text-zinc-400">No active themes detected</p><p className="mt-1 text-xs text-zinc-600">This deck may rely more on standalone roles than connected themes.</p></div></div>}
             </div>
           </div>
+          {selectedEngine && <section className="binder-theme-detail fixed inset-0 z-[110] grid place-items-center bg-black/55 p-4 backdrop-blur-md" aria-label={`${selectedEngine.label} theme details`}>
+            <div className="binder-theme-detail-sheet flex max-h-[88vh] w-[min(1120px,96vw)] flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#101512]/98 shadow-[0_30px_90px_rgba(0,0,0,.72)]">
+              <header className="flex flex-wrap items-center gap-3 border-b border-white/[.07] px-5 py-4 sm:px-7"><div className="mr-auto flex items-center gap-3"><span className="binder-engine-running grid size-10 place-items-center rounded-full bg-white/[.04] text-[var(--binder-accent)]"><ThemeVialGlyph className="size-7" /></span><div><h3 className="font-heading text-xl font-semibold text-white">{selectedEngine.label}</h3><p className="text-[10px] text-zinc-500">How the theme starts, grows, and pays off</p></div></div><div className="flex items-center gap-2"><button type="button" disabled={selectedEngine.ignored} onClick={()=>onToggleThemeBoosted(selectedEngine.id)} className={`flex h-8 items-center gap-1.5 rounded-full border px-3 text-[10px] font-medium transition ${selectedEngine.boosted?'border-amber-300/40 bg-amber-300/15 text-amber-200 shadow-[0_0_14px_rgba(252,211,77,.12)]':'border-white/10 bg-white/[.025] text-zinc-400 hover:border-amber-300/30 hover:text-amber-200'} disabled:cursor-not-allowed disabled:opacity-35`} aria-pressed={selectedEngine.boosted}><Sparkles className="size-3.5" />{selectedEngine.boosted?'Promoted':'Promote theme'}</button><button type="button" onClick={()=>onToggleThemeIgnored(selectedEngine.id)} className={`flex h-8 items-center gap-1.5 rounded-full border px-3 text-[10px] font-medium transition ${selectedEngine.ignored?'border-red-300/40 bg-red-300/15 text-red-200':'border-white/10 bg-white/[.025] text-zinc-400 hover:border-red-300/30 hover:text-red-200'}`} aria-pressed={selectedEngine.ignored}><Ban className="size-3.5" />{selectedEngine.ignored?'Ignored':'Ignore theme'}</button></div><button type="button" onClick={()=>setSelectedEngineId('')} className="grid size-9 place-items-center rounded-full text-zinc-500 transition hover:bg-white/5 hover:text-white" aria-label="Close theme details"><X className="size-4" /></button></header>
+              <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto p-4 md:grid-cols-3 md:overflow-hidden sm:p-6">
+                {([['Enablers',selectedEngine.enablers,'Produce the events or resources the theme needs.'],['Payoffs',selectedEngine.payoffs,'Convert those events or resources into advantage.'],['Support',selectedEngine.support,'Improve access, repetition, or reliability.']] as const).map(([label,cards,description])=><section key={label} className="flex min-h-0 flex-col rounded-2xl border border-white/[.07] bg-black/15 p-3"><div className="mb-3"><div className="flex items-center justify-between"><h4 className="font-heading text-sm font-semibold text-zinc-100">{label}</h4><span className="font-mono text-[10px] text-zinc-600">{cards.length}</span></div><p className="mt-1 text-[9px] leading-4 text-zinc-600">{description}</p></div><div className="grid min-h-0 grid-cols-3 gap-2 overflow-y-auto px-1 py-2 md:grid-cols-2 lg:grid-cols-3">{cards.length?cards.map((card,index)=>{const status=statusOf(card);return <button type="button" key={keyOf(card)} onClick={()=>onFocus(keyOf(card))} className={`binder-engine-card group relative aspect-[63/88] overflow-visible rounded-[7%] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--binder-accent)] ${status==='keep'?'binder-card-keep':status==='cut'?'binder-card-cut':''}`} style={{'--card-index':index} as CSSProperties} title={`${card.name} — ${status}`} aria-label={`Inspect ${card.name}, ${status}`}><span className="pointer-events-none absolute inset-0 overflow-hidden rounded-[7%] bg-black/30 shadow-[0_8px_18px_rgba(0,0,0,.35)] transition duration-200 group-hover:z-10 group-hover:scale-[1.07] group-hover:shadow-[0_14px_28px_rgba(0,0,0,.55)]">{card.cardData?.imageUri?<img src={card.cardData.imageUri} alt={card.name} className="h-full w-full object-cover" />:<span className="grid h-full place-items-center p-1 text-center text-[9px] text-zinc-500">{card.name}</span>}{status==='keep'&&<span className="absolute right-1 top-1 grid size-5 place-items-center rounded-full border border-amber-300/70 bg-black/80 text-amber-300 shadow-[0_0_10px_rgba(252,211,77,.5)]"><ShieldCheck className="size-3" /></span>}{status==='cut'&&<span className="absolute inset-0 bg-[linear-gradient(135deg,transparent_47%,rgba(248,113,113,.8)_48%,rgba(248,113,113,.8)_52%,transparent_53%)]" />}{card.quantity>1&&<span className="absolute bottom-1 right-1 rounded-full bg-black/75 px-1.5 py-0.5 font-mono text-[9px] text-white">×{card.quantity}</span>}</span></button>}):<div className="col-span-full grid min-h-32 place-items-center text-center text-[10px] text-zinc-700">No cards currently identified</div>}</div></section>)}
+              </div>
+            </div>
+          </section>}
         </section>
       )}
 
       {focusedKey && focused && (
-        <section inert={isClosingInspection ? true : undefined} className={`binder-inspection-backdrop absolute inset-0 z-50 grid place-items-center overflow-hidden bg-black/38 p-5 backdrop-blur-md ${isClosingInspection?'binder-inspection-closing pointer-events-none':''}`} aria-label={`Inspect ${focused.card.name}`}>
+        <section inert={isClosingInspection ? true : undefined} className={`binder-inspection-backdrop absolute inset-0 z-[120] grid place-items-center overflow-hidden bg-black/38 p-5 backdrop-blur-md ${isClosingInspection?'binder-inspection-closing pointer-events-none':''}`} aria-label={`Inspect ${focused.card.name}`}>
           {!isClosingInspection && <button type="button" onClick={closeInspection} className="absolute right-5 top-4 grid size-10 place-items-center rounded-full bg-black/25 text-zinc-300 backdrop-blur" aria-label="Return card to binder"><X className="size-5" /></button>}
           <div className="grid max-h-full w-full max-w-4xl grid-cols-[minmax(220px,340px)_minmax(260px,1fr)] items-center gap-8 lg:gap-14">
             <div className="binder-lifted-card group relative mx-auto aspect-[63/88] max-h-[72vh] w-full max-w-[340px] [perspective:1200px]">
@@ -772,9 +853,11 @@ export default function BinderCutWorkspace({
             <div className="binder-inspection-details max-h-[76vh] overflow-y-auto pr-2 text-shadow-sm">
               <div className="flex items-start justify-between gap-4">
                 <div><h1 className="font-heading text-3xl font-semibold tracking-[-0.035em] text-white">{focused.card.name}<FoilIndicator cacheKey={focused.card.cardData?.cacheKey} /></h1><p className="mt-1 text-sm text-zinc-400">{score >= .7 ? 'Strong cut candidate' : score >= .4 ? 'Worth reviewing' : 'Strong fit for this deck'}</p></div>
-                <button type="button" onClick={cycleScore} className="relative grid size-20 shrink-0 place-items-center rounded-full" style={{background:`conic-gradient(${scoreMetric==='all'?'#e6c66a':'var(--binder-accent)'} ${score*100}%,rgba(255,255,255,.09) 0)`}} aria-label={`Cut score ${Math.round(score*100)}. Showing ${scoreDetail?.label ?? scoreMetric}. Click to change score.`}>
-                  <span className="absolute inset-[7px] rounded-full bg-[#111614]/95" /><span className="relative text-center"><strong className="block font-mono text-xl text-white">{Math.round(score*100)}</strong><small className="block text-[9px] text-zinc-500">{scoreDetail?.label ?? scoreMetric}</small></span>
-                </button>
+                <div className="grid size-24 shrink-0 place-items-center">
+                  <button type="button" onClick={cycleScore} className="binder-score-interactive relative grid size-20 place-items-center rounded-full hover:scale-[1.07] focus-visible:scale-[1.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--binder-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[#111614]" style={{'--binder-score-progress':`${score*100}%`,background:`conic-gradient(${scoreMetric==='all'?'#e6c66a':'var(--binder-accent)'} var(--binder-score-progress),rgba(255,255,255,.09) 0)`,transition:'transform 200ms ease-out, --binder-score-progress 440ms cubic-bezier(.22,.8,.3,1)'} as CSSProperties} aria-label={`Cut score ${Math.round(score*100)}. Showing ${scoreDetail?.label ?? scoreMetric}. Click to change score.`} title="Click to change score">
+                    <span className="absolute inset-[7px] rounded-full bg-[#111614]/95" /><span className="relative text-center"><strong className="block font-mono text-xl text-white">{Math.round(score*100)}</strong><small className="block text-[9px] text-zinc-500">{scoreDetail?.label ?? scoreMetric}</small></span>
+                  </button>
+                </div>
               </div>
               <div className="mt-5 space-y-4">
                 {[['Effects',Zap,focusedEffects],['Themes',Sparkles,focusedThemes],['Roles',Layers3,focusedRoles]].map(([label,Icon,values])=><section key={label as string}><p className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500"><Icon className="size-3.5" />{label as string}</p><div className="flex flex-wrap gap-1.5">{(values as string[]).length?(values as string[]).slice(0,8).map(value=><span key={value} className="border-b border-white/15 bg-black/15 px-2 py-1 text-xs text-zinc-200">{value}</span>):<span className="text-xs text-zinc-600">None detected</span>}</div></section>)}

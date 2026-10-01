@@ -4741,14 +4741,43 @@ export default function CutWorkspace({
     .filter(
       (group) =>
         group.tag.startsWith('engine:') &&
-        !group.ignored &&
         group.cards.length > 0,
     )
-    .map((group) => ({
-      id: group.tag,
-      label: displayTag(group.tag),
-      cards: group.cards,
-    }));
+    .map((group) => {
+      const enablers: WorkspaceCard[] = [];
+      const payoffs: WorkspaceCard[] = [];
+      const support: WorkspaceCard[] = [];
+      group.cards.forEach((card) => {
+        const signals = structuredSignalsByCard.get(keyOf(card)) ?? {
+          emits: new Set<string>(),
+          listens: new Set<string>(),
+          eligible: new Set<string>(),
+          support: new Set<string>(),
+        };
+        const roles = engineParticipation(signals, group.tag);
+        if ((structuredEnginesByCard.get(keyOf(card)) ?? []).includes(group.tag)) {
+          const specialized = engineSpecializationRoles(signals, group.tag);
+          roles.enabler ||= specialized.enabler;
+          roles.payoff ||= specialized.payoff;
+        }
+        if (roles.enabler) enablers.push(card);
+        if (roles.payoff) payoffs.push(card);
+        if (roles.support || (!roles.enabler && !roles.payoff)) support.push(card);
+      });
+      return {
+        id: group.tag,
+        label: displayTag(group.tag)
+          .replace(/\bEngine\b/gi, '')
+          .replace(/\s{2,}/g, ' ')
+          .trim(),
+        ignored: isIgnoredSynergy(group.tag),
+        boosted: isBoostedSynergy(group.tag),
+        cards: group.cards,
+        enablers,
+        payoffs,
+        support,
+      };
+    });
   return (
     <BinderCutWorkspace
       deckName={deckName}
@@ -4773,6 +4802,28 @@ export default function CutWorkspace({
       onCut={markCut}
       onUndecided={resetDecision}
       onBudgetChange={setBudget}
+      onToggleThemeBoosted={(id) =>
+        setBoostedSynergies((current) => {
+          const next = new Set(current);
+          if (next.has(id)) next.delete(id);
+          else next.add(id);
+          return next;
+        })
+      }
+      onToggleThemeIgnored={(id) => {
+        if (!isIgnoredSynergy(id))
+          setBoostedSynergies((current) => {
+            const next = new Set(current);
+            next.delete(id);
+            return next;
+          });
+        setIgnoredSynergies((current) => {
+          const next = new Set(current);
+          if (next.has(id)) next.delete(id);
+          else next.add(id);
+          return next;
+        });
+      }}
       onBack={onBack}
     />
   );

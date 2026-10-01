@@ -38,6 +38,14 @@ const detectorCases = [
 ] as const;
 
 describe('literal effect extractors', () => {
+  it('keeps Detective intact when singularizing Detectives', () => {
+    const effect = extractCardEffects(
+      fixtureCard('Detective support', 'Other Detectives you control get +1/+1.'),
+    ).find((entry) => entry.evidence[0].detectorId === 'typal-group-bonus');
+
+    expect(effect?.subject.creatureTypes).toEqual(['detective']);
+  });
+
   it.each(detectorCases)('extracts %s', (detectorId, text) => {
     const effects = extractCardEffects(fixtureCard(detectorId, text));
     expect(effects.some((effect) => effect.evidence[0].detectorId === detectorId)).toBe(true);

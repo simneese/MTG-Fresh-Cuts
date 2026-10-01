@@ -364,6 +364,9 @@ function usesChosenCreatureType(card: EffectCard, paragraphText: string) {
 }
 
 function singularCreatureType(type: string) {
+  // Plurals such as "detectives" end in "ves", but the v belongs to the
+  // singular word. They should lose only the trailing s, unlike elves/wolves.
+  if (type.endsWith('tives')) return type.slice(0, -1);
   if (type.endsWith('ves')) return `${type.slice(0, -3)}f`;
   if (type.endsWith('ies')) return `${type.slice(0, -3)}y`;
   return type.endsWith('s') ? type.slice(0, -1) : type;

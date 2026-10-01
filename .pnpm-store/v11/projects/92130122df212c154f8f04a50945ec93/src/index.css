@@ -122,17 +122,42 @@ main > div > section.mb-7 article:nth-child(2) > div:nth-child(2) span:hover {
   background: rgba(252, 165, 165, 0.16) !important;
 }
 
-.binder-card-keep > img {
+.binder-card-keep img {
   box-shadow:
     0 0 0 2px rgb(252 211 77 / 0.9),
     0 0 18px rgb(252 211 77 / 0.48);
 }
 
-.binder-card-cut > img {
+.binder-card-cut img {
   filter: saturate(0.18) brightness(0.42);
   box-shadow:
     0 0 0 2px rgb(248 113 113 / 0.9),
     0 0 16px rgb(248 113 113 / 0.42);
+}
+
+@keyframes binder-score-glow {
+  0%, 100% {
+    box-shadow: 0 0 10px rgb(230 198 106 / 0.12);
+  }
+  50% {
+    box-shadow: 0 0 19px rgb(230 198 106 / 0.28);
+  }
+}
+
+@property --binder-score-progress {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 0%;
+}
+
+.binder-score-interactive {
+  animation: binder-score-glow 2.8s ease-in-out infinite;
+}
+
+.binder-score-interactive:hover,
+.binder-score-interactive:focus-visible {
+  animation: none;
+  box-shadow: 0 0 24px rgb(230 198 106 / 0.38);
 }
 
 @keyframes binder-inspection-enter {
@@ -457,6 +482,18 @@ main > div > section.mb-7 article:nth-child(2) > div:nth-child(2) span:hover {
   100% { opacity: 0; transform: translate(2px, -7px) scale(1.45); }
 }
 
+@keyframes binder-vial-bubble-rise {
+  0% { opacity: 0; transform: translate(0, 3px) scale(.55); }
+  16% { opacity: .82; }
+  72% { opacity: .9; }
+  100% { opacity: 0; transform: translate(var(--bubble-drift), -22px) scale(1.2); }
+}
+
+@keyframes binder-vial-liquid-brew {
+  0%, 100% { transform: translateY(0) scaleX(1); }
+  50% { transform: translateY(-.7px) scaleX(1.025); }
+}
+
 @keyframes binder-engine-window-enter {
   from { opacity: 0; transform: scale(.96) translateY(10px); }
   to { opacity: 1; transform: scale(1) translateY(0); }
@@ -488,6 +525,98 @@ main > div > section.mb-7 article:nth-child(2) > div:nth-child(2) span:hover {
     transform: perspective(1500px) rotateY(-180deg);
     box-shadow: 4px 0 10px rgb(0 0 0 / 12%);
   }
+}
+
+@keyframes binder-intro-front-face {
+  0%, 49.9% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+@keyframes binder-intro-back-face {
+  0%, 49.9% { opacity: 0; }
+  50%, 100% { opacity: 1; }
+}
+
+@keyframes binder-theme-cover-close {
+  0% {
+    transform: perspective(1500px) rotateY(-180deg);
+    box-shadow: 4px 0 10px rgb(0 0 0 / 12%);
+  }
+  48% { box-shadow: 26px 0 42px rgb(0 0 0 / 44%); }
+  52% { box-shadow: -28px 0 44px rgb(0 0 0 / 48%); }
+  100% {
+    transform: perspective(1500px) rotateY(0deg);
+    box-shadow: -4px 0 10px rgb(0 0 0 / 14%);
+  }
+}
+
+@keyframes binder-theme-front-face-in {
+  0%, 49.9% { opacity: 0; }
+  50%, 100% { opacity: 1; }
+}
+
+@keyframes binder-theme-back-face-out {
+  0%, 49.9% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+@keyframes binder-theme-book-aside {
+  from {
+    left: 50%;
+    top: 96px;
+    bottom: 54px;
+    width: calc((100vw - 40px) / 2);
+    transform: translateX(calc(-50% + 25vw - 10px));
+  }
+  to {
+    left: 20px;
+    top: 32px;
+    bottom: 32px;
+    width: 96px;
+    transform: translateX(0);
+  }
+}
+
+@keyframes binder-theme-book-return {
+  from {
+    left: 20px;
+    top: 32px;
+    bottom: 32px;
+    width: 96px;
+    transform: translateX(0);
+  }
+  to {
+    left: 50%;
+    top: 96px;
+    bottom: 54px;
+    width: calc((100vw - 40px) / 2);
+    transform: translateX(calc(-50% + 25vw - 10px));
+  }
+}
+
+@keyframes binder-theme-curtain-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes binder-theme-page-enter {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes binder-theme-page-exit {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(12px); }
+}
+
+@keyframes binder-theme-cover-details-out {
+  0% { opacity: 1; }
+  65%, 100% { opacity: 0; }
+}
+
+@keyframes binder-theme-cover-details-in {
+  0%, 42% { opacity: 0; }
+  100% { opacity: 1; }
 }
 
 @keyframes binder-intro-clear {
@@ -542,10 +671,154 @@ main > div > section.mb-7 article:nth-child(2) > div:nth-child(2) span:hover {
 
 .binder-intro-cover-front {
   transform: rotateY(0deg);
+  z-index: 2;
 }
 
 .binder-intro-cover-back {
   transform: rotateY(180deg);
+  backface-visibility: visible;
+  -webkit-backface-visibility: visible;
+  opacity: 0;
+  z-index: 1;
+}
+
+.binder-theme-curtain {
+  opacity: 0;
+}
+
+.binder-theme-book {
+  left: 50%;
+  z-index: 1;
+  transform: translateX(calc(-50% + 25vw - 10px));
+  transform-style: preserve-3d;
+}
+
+.binder-theme-stationary { z-index: 1; }
+
+.binder-theme-closing-cover {
+  z-index: 2;
+  transform: perspective(1500px) rotateY(-180deg);
+  transform-origin: left center;
+  transform-style: preserve-3d;
+}
+
+.binder-theme-cover-front {
+  opacity: 0;
+  transform: rotateY(0deg);
+  z-index: 2;
+}
+
+.binder-theme-cover-back {
+  backface-visibility: visible;
+  -webkit-backface-visibility: visible;
+  opacity: 1;
+  transform: rotateY(180deg);
+  z-index: 1;
+}
+
+.binder-theme-closing .binder-theme-closing-cover {
+  animation: binder-theme-cover-close 1.04s cubic-bezier(.42,0,.58,1) both;
+}
+
+.binder-theme-closing .binder-theme-cover-front {
+  animation: binder-theme-front-face-in 1.04s linear both;
+}
+
+.binder-theme-closing .binder-theme-cover-back {
+  animation: binder-theme-back-face-out 1.04s linear both;
+}
+
+.binder-theme-shifting .binder-theme-curtain {
+  animation: binder-theme-curtain-in 620ms ease-out both;
+}
+
+.binder-theme-shifting .binder-theme-book {
+  animation: binder-theme-book-aside 620ms cubic-bezier(.32,.72,.2,1) both;
+}
+
+.binder-theme-shifting .binder-theme-cover-front > * {
+  animation: binder-theme-cover-details-out 360ms ease-in both;
+}
+
+.binder-theme-shifting .binder-theme-closing-cover {
+  transform: perspective(1500px) rotateY(0deg);
+}
+
+.binder-theme-shifting .binder-theme-cover-front { opacity: 1; }
+.binder-theme-shifting .binder-theme-cover-back { opacity: 0; }
+
+.binder-theme-returning .binder-theme-curtain {
+  opacity: 1;
+}
+
+.binder-theme-returning .binder-theme-book {
+  animation: binder-theme-book-return 620ms cubic-bezier(.32,.72,.2,1) both;
+}
+
+.binder-theme-returning .binder-theme-cover-front > * {
+  animation: binder-theme-cover-details-in 620ms ease-out both;
+}
+
+.binder-theme-returning .binder-theme-closing-cover,
+.binder-theme-reopening .binder-theme-closing-cover {
+  transform: perspective(1500px) rotateY(0deg);
+}
+
+.binder-theme-returning .binder-theme-cover-front,
+.binder-theme-reopening .binder-theme-cover-front { opacity: 1; }
+.binder-theme-returning .binder-theme-cover-back,
+.binder-theme-reopening .binder-theme-cover-back { opacity: 0; }
+
+.binder-theme-reopening .binder-theme-curtain {
+  animation: binder-intro-clear 1.08s ease-out both;
+}
+
+.binder-theme-reopening .binder-theme-book {
+  transform: translateX(calc(-50% + 25vw - 10px));
+}
+
+.binder-theme-reopening .binder-theme-closing-cover {
+  animation: binder-intro-cover-open 1.04s cubic-bezier(.42,0,.58,1) both;
+}
+
+.binder-theme-reopening .binder-theme-cover-front {
+  animation: binder-intro-front-face 1.04s linear both;
+}
+
+.binder-theme-reopening .binder-theme-cover-back {
+  animation: binder-intro-back-face 1.04s linear both;
+  backface-visibility: visible;
+  -webkit-backface-visibility: visible;
+  z-index: 3;
+}
+
+.binder-theme-page {
+  isolation: isolate;
+}
+
+.binder-theme-page .binder-engine-window {
+  animation: binder-theme-page-enter 360ms cubic-bezier(.2,.8,.2,1) both;
+}
+
+.binder-theme-detail {
+  animation: binder-inspection-enter 220ms ease-out both;
+}
+
+.binder-theme-detail-sheet {
+  animation: binder-engine-window-enter 280ms cubic-bezier(.2,.8,.2,1) both;
+}
+
+.binder-theme-page-exit {
+  animation: binder-theme-page-exit 360ms ease-in both;
+}
+
+.binder-theme-leaving .binder-workspace-chrome {
+  opacity: 0;
+  transition: opacity 220ms ease-in;
+}
+
+.binder-theme-leaving .binder-spread {
+  opacity: 0;
 }
 
 .binder-intro-cover h1 {
@@ -591,12 +864,22 @@ main > div > section.mb-7 article:nth-child(2) > div:nth-child(2) span:hover {
 }
 
 .binder-intro-opening .binder-intro-book {
+  animation: none;
   transform: translateX(calc(-50% + var(--binder-intro-shift)));
-  animation: binder-intro-book-release 1.3s ease-out both;
+  opacity: 1;
 }
 
 .binder-intro-opening .binder-intro-cover {
   animation: binder-intro-cover-open 1.04s cubic-bezier(.42,0,.58,1) both;
+}
+
+.binder-intro-opening .binder-intro-cover-front {
+  animation: binder-intro-front-face 1.04s linear both;
+}
+
+.binder-intro-opening .binder-intro-cover-back {
+  animation: binder-intro-back-face 1.04s linear both;
+  z-index: 3;
 }
 
 .binder-workspace-intro .binder-workspace-chrome {
@@ -608,7 +891,7 @@ main > div > section.mb-7 article:nth-child(2) > div:nth-child(2) span:hover {
 }
 
 .binder-workspace-revealing .binder-spread {
-  animation: binder-live-spread-in 140ms linear 1.1s both;
+  animation: binder-live-spread-in 1ms step-end 1.04s both;
 }
 
 .binder-workspace-revealing .binder-workspace-chrome {
@@ -637,6 +920,38 @@ main > div > section.mb-7 article:nth-child(2) > div:nth-child(2) span:hover {
   opacity: 0;
   transform-box: fill-box;
   transform-origin: center;
+}
+
+.binder-vial-bubble {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.binder-vial-bubble-one { --bubble-drift: -2px; }
+.binder-vial-bubble-two { --bubble-drift: 1.5px; }
+.binder-vial-bubble-three { --bubble-drift: -.6px; }
+
+.binder-engine-trigger:hover .binder-vial-liquid,
+.binder-engine-running .binder-vial-liquid {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+  animation: binder-vial-liquid-brew .7s ease-in-out infinite;
+}
+
+.binder-engine-trigger:hover .binder-vial-bubble-one,
+.binder-engine-running .binder-vial-bubble-one {
+  animation: binder-vial-bubble-rise 1.35s ease-out infinite;
+}
+
+.binder-engine-trigger:hover .binder-vial-bubble-two,
+.binder-engine-running .binder-vial-bubble-two {
+  animation: binder-vial-bubble-rise 1.35s ease-out .42s infinite;
+}
+
+.binder-engine-trigger:hover .binder-vial-bubble-three,
+.binder-engine-running .binder-vial-bubble-three {
+  animation: binder-vial-bubble-rise 1.35s ease-out .82s infinite;
 }
 
 .binder-engine-trigger:hover .binder-train-wheel,
@@ -672,7 +987,7 @@ main > div > section.mb-7 article:nth-child(2) > div:nth-child(2) span:hover {
 }
 
 .binder-engine-card {
-  animation: binder-engine-card-enter 220ms ease-out calc(var(--card-index) * 18ms) both;
+  animation: binder-engine-card-enter 220ms ease-out calc(var(--card-index) * 18ms) backwards;
 }
 
 .binder-inspection-backdrop {
@@ -879,9 +1194,16 @@ main > div > section.mb-7 article:nth-child(2) > div:nth-child(2) span:hover {
     animation: none;
   }
 
+  .binder-score-interactive {
+    animation: none;
+    box-shadow: 0 0 14px rgb(230 198 106 / 0.2);
+  }
+
   .binder-train-wheel,
   .binder-train-rod,
   .binder-smoke-puff,
+  .binder-vial-liquid,
+  .binder-vial-bubble,
   .binder-engine-window,
   .binder-engine-node,
   .binder-engine-cards,
